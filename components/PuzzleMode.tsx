@@ -207,7 +207,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
   const statusColor = state === 'solving' ? 'text-gray-700' : state === 'complete' ? 'text-green-600' : state === 'failed' ? 'text-red-500' : 'text-green-600';
 
   return (
-    <div className="flex flex-col items-center gap-4 py-4">
+    <div className="flex flex-col items-center gap-2 py-2">
       <div className="flex items-center justify-between w-full max-w-[480px] px-1">
         <div>
           <div className={`text-lg font-semibold ${statusColor}`}>{statusMsg}</div>

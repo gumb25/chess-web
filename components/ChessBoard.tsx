@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { Chess, Square } from 'chess.js';
-import ChessPiece from './ChessPiece';
+import ChessPiece, { BoardPieceG } from './ChessPiece';
 import { BoardTheme, BOARD_THEMES, PieceColor, PieceType } from '@/lib/types';
 
 export interface Arrow {
@@ -197,9 +197,7 @@ export default function ChessBoard({
               : <circle cx={x + CELL / 2} cy={y + CELL / 2} r={CELL * 0.16} fill="rgba(0,0,0,0.22)"/>
           )}
           {piece && (
-            <foreignObject x={x + CELL * 0.06} y={y + CELL * 0.06} width={CELL * 0.88} height={CELL * 0.88}>
-              <ChessPiece color={piece.color as PieceColor} type={piece.type as PieceType} size={CELL}/>
-            </foreignObject>
+            <BoardPieceG color={piece.color as PieceColor} type={piece.type as PieceType} x={x} y={y} cellSize={CELL}/>
           )}
           {col === 0 && (
             <text x={x + 3} y={y + 13} fontSize={11} fill={isLight ? colors.dark : colors.light} fontWeight="600" fontFamily="sans-serif" pointerEvents="none">
@@ -217,8 +215,8 @@ export default function ChessBoard({
   }
 
   return (
-    <div className="relative select-none" style={{ width: BOARD_SIZE, height: BOARD_SIZE }}>
-      <svg width={BOARD_SIZE} height={BOARD_SIZE} style={{ display: 'block' }}>
+    <div className="relative select-none w-full" style={{ maxWidth: BOARD_SIZE }}>
+      <svg viewBox={`0 0 ${BOARD_SIZE} ${BOARD_SIZE}`} style={{ width: '100%', display: 'block' }}>
         {squares}
         {renderArrows()}
       </svg>

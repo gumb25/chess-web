@@ -152,7 +152,7 @@ export default function AnalyzeMode({ settings, initialFen, initialMoves, onPlay
     : `${evalNum > 0 ? '+' : ''}${(evalNum / 100).toFixed(2)}`;
 
   return (
-    <div className="flex flex-col items-center gap-3 py-4">
+    <div className="flex flex-col items-center gap-2 py-2">
       <div className="flex items-center justify-between w-full max-w-[480px] px-1">
         <div className="text-sm font-semibold text-gray-700">
           Analysis {isAnalyzing && <span className="text-gray-400 font-normal">(thinking…)</span>}

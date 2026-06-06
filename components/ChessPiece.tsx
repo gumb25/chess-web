@@ -135,3 +135,24 @@ export default function ChessPiece({ color, type, size }: Props) {
     </svg>
   );
 }
+
+// For use directly inside an SVG board — renders as a <g> with proper transform
+// so it scales correctly when the SVG uses a viewBox.
+export function BoardPieceG({ color, type, x, y, cellSize }: {
+  color: PieceColor;
+  type: PieceType;
+  x: number;
+  y: number;
+  cellSize: number;
+}) {
+  const key = `${color}${type}`;
+  const content = PIECES[key];
+  if (!content) return null;
+  const scale = (cellSize * 0.88) / 45;
+  const offset = cellSize * 0.06;
+  return (
+    <g transform={`translate(${x + offset},${y + offset}) scale(${scale})`} pointerEvents="none">
+      {content}
+    </g>
+  );
+}
