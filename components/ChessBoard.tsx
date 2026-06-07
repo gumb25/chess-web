@@ -215,7 +215,7 @@ export default function ChessBoard({
   }
 
   return (
-    <div className="relative select-none w-full" style={{ maxWidth: BOARD_SIZE }}>
+    <div className="relative select-none w-full rounded-2xl overflow-hidden" style={{ maxWidth: BOARD_SIZE }}>
       <svg viewBox={`0 0 ${BOARD_SIZE} ${BOARD_SIZE}`} style={{ width: '100%', display: 'block' }}>
         {squares}
         {renderArrows()}

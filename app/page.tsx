@@ -6,6 +6,7 @@ import { Tab, AppSettings } from '@/lib/types';
 import { loadSettings, saveSettings, loadAllStats, loadDayStats, saveDayStats } from '@/lib/storage';
 import type { DayStats, PuzzleResult } from '@/lib/types';
 
+const HomeView = dynamic(() => import('@/components/HomeView'), { ssr: false });
 const PuzzleMode = dynamic(() => import('@/components/PuzzleMode'), { ssr: false });
 const PlayMode = dynamic(() => import('@/components/PlayMode'), { ssr: false });
 const AnalyzeMode = dynamic(() => import('@/components/AnalyzeMode'), { ssr: false });
@@ -21,11 +22,11 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ];
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('puzzle');
+  const [tab, setTab] = useState<Tab>('home');
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [dayStats, setDayStats] = useState<DayStats>(loadDayStats);
   const [allStats, setAllStats] = useState<PuzzleResult[]>([]);
-  const [analyzeState, setAnalyzeState] = useState<{ fen: string; moves: string[] } | null>(null);
+  const [analyzeState, setAnalyzeState] = useState<{ fen: string; moves: string[]; playerColor?: 'w' | 'b' } | null>(null);
   const [playState, setPlayState] = useState<{ fen?: string; color?: 'w' | 'b' } | null>(null);
 
   useEffect(() => {
@@ -43,8 +44,8 @@ export default function App() {
     setAllStats(loadAllStats());
   };
 
-  const handleAnalyze = (fen: string, moves: string[]) => {
-    setAnalyzeState({ fen, moves });
+  const handleAnalyze = (fen: string, moves: string[], playerColor?: 'w' | 'b') => {
+    setAnalyzeState({ fen, moves, playerColor });
     setTab('analyze');
   };
 
@@ -53,10 +54,27 @@ export default function App() {
     setTab('play');
   };
 
+  if (tab === 'home') {
+    return (
+      <HomeView
+        dayStats={dayStats}
+        onPuzzle={() => setTab('puzzle')}
+        onPlay={() => setTab('play')}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-[#f8f8f7]">
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-2">
-        <span className="text-xl">♔</span>
+      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
+        <button
+          onClick={() => setTab('home')}
+          className="text-gray-400 hover:text-gray-700 transition-colors text-lg leading-none"
+          aria-label="Home"
+        >
+          ‹
+        </button>
+        <span className="text-xl select-none">♔</span>
         <span className="text-lg font-bold text-gray-800 tracking-tight">Chess</span>
       </header>
 
@@ -66,7 +84,7 @@ export default function App() {
             settings={settings}
             dayStats={dayStats}
             onDayStatsChange={handleDayStatsChange}
-            onAnalyze={handleAnalyze}
+            onAnalyze={(fen, moves, playerColor) => handleAnalyze(fen, moves, playerColor)}
           />
         )}
         {tab === 'play' && (
@@ -84,6 +102,7 @@ export default function App() {
             settings={settings}
             initialFen={analyzeState?.fen}
             initialMoves={analyzeState?.moves}
+            initialPlayerColor={analyzeState?.playerColor}
             onPlayFromHere={handlePlayFromHere}
           />
         )}

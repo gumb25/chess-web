@@ -11,7 +11,7 @@ export interface Puzzle {
 
 export type BoardTheme = 'classic' | 'professional' | 'minimal';
 
-export type Tab = 'puzzle' | 'play' | 'analyze' | 'stats' | 'settings';
+export type Tab = 'home' | 'puzzle' | 'play' | 'analyze' | 'stats' | 'settings';
 
 export interface PuzzleResult {
   puzzleId: string;

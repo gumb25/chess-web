@@ -10,7 +10,7 @@ interface Props {
   settings: AppSettings;
   dayStats: DayStats;
   onDayStatsChange: (s: DayStats) => void;
-  onAnalyze?: (fen: string, moves: string[]) => void;
+  onAnalyze?: (fen: string, moves: string[], playerColor: 'w' | 'b') => void;
 }
 
 type PuzzleState = 'solving' | 'correct' | 'failed' | 'complete';
@@ -207,7 +207,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
   const statusColor = state === 'solving' ? 'text-gray-700' : state === 'complete' ? 'text-green-600' : state === 'failed' ? 'text-red-500' : 'text-green-600';
 
   return (
-    <div className="flex flex-col items-center gap-2 py-2">
+    <div className="flex flex-col items-center gap-2 py-2 px-3">
       <div className="flex items-center justify-between w-full max-w-[480px] px-1">
         <div>
           <div className={`text-lg font-semibold ${statusColor}`}>{statusMsg}</div>
@@ -268,7 +268,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
             <button onClick={handleNextPuzzle} className="flex-1 bg-green-600 hover:bg-green-700 text-white rounded-xl py-2 px-4 text-sm font-medium transition-colors">
               Next Puzzle
             </button>
-            <button onClick={() => onAnalyze?.(puzzle.fen, puzzle.moves)} className="flex-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-600 rounded-xl py-2 px-4 text-sm font-medium transition-colors">
+            <button onClick={() => onAnalyze?.(puzzle.fen, puzzle.moves, flipped ? 'b' : 'w')} className="flex-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-600 rounded-xl py-2 px-4 text-sm font-medium transition-colors">
               Analyze
             </button>
           </>
@@ -291,11 +291,16 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
           </div>
         </div>
         {dayStats.played > 0 && (
-          <div className="w-full h-2 bg-red-200 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-green-500 rounded-full transition-all"
-              style={{ width: `${(dayStats.correct / dayStats.played) * 100}%` }}
-            />
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-2 bg-red-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-green-500 rounded-full transition-all"
+                style={{ width: `${(dayStats.correct / dayStats.played) * 100}%` }}
+              />
+            </div>
+            <span className="text-xs font-semibold text-gray-500 w-9 text-right">
+              {Math.round((dayStats.correct / dayStats.played) * 100)}%
+            </span>
           </div>
         )}
       </div>

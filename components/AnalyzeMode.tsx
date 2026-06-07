@@ -10,10 +10,11 @@ interface Props {
   settings: AppSettings;
   initialFen?: string;
   initialMoves?: string[];
+  initialPlayerColor?: 'w' | 'b';
   onPlayFromHere?: (fen: string, color: 'w' | 'b') => void;
 }
 
-export default function AnalyzeMode({ settings, initialFen, initialMoves, onPlayFromHere }: Props) {
+export default function AnalyzeMode({ settings, initialFen, initialMoves, initialPlayerColor, onPlayFromHere }: Props) {
   const [chess, setChess] = useState<Chess>(() => {
     const c = new Chess(initialFen ?? undefined);
     if (initialFen && initialMoves) {
@@ -24,7 +25,7 @@ export default function AnalyzeMode({ settings, initialFen, initialMoves, onPlay
     return c;
   });
   const [history, setHistory] = useState<Chess[]>([]);
-  const [flipped, setFlipped] = useState(false);
+  const [flipped, setFlipped] = useState(() => initialPlayerColor === 'b');
   const [lastMove, setLastMove] = useState<{ from: Square; to: Square } | null>(null);
   const [evalScore, setEvalScore] = useState<string>('0');
   const [arrows, setArrows] = useState<Arrow[]>([]);
@@ -152,7 +153,7 @@ export default function AnalyzeMode({ settings, initialFen, initialMoves, onPlay
     : `${evalNum > 0 ? '+' : ''}${(evalNum / 100).toFixed(2)}`;
 
   return (
-    <div className="flex flex-col items-center gap-2 py-2">
+    <div className="flex flex-col items-center gap-2 py-2 px-3">
       <div className="flex items-center justify-between w-full max-w-[480px] px-1">
         <div className="text-sm font-semibold text-gray-700">
           Analysis {isAnalyzing && <span className="text-gray-400 font-normal">(thinking…)</span>}

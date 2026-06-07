@@ -1,20 +1,33 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
+
+interface StockfishResult {
+  bestMove: string;
+  score: string;
+  pv: string[];
+}
 
 interface StockfishHook {
   sendCommand: (cmd: string) => void;
-  getBestMove: (fen: string, movetime: number) => Promise<{ bestMove: string; score: string; pv: string[] }>;
+  getBestMove: (fen: string, movetime: number) => Promise<StockfishResult>;
   isReady: boolean;
 }
 
 export function useStockfish(onReady?: () => void): StockfishHook {
   const workerRef = useRef<Worker | null>(null);
-  const isReadyRef = useRef(false);
-  const resolversRef = useRef<Map<string, (v: { bestMove: string; score: string; pv: string[] }) => void>>(new Map());
-  const currentFenRef = useRef('');
+  const [isReady, setIsReady] = useState(false);
+
+  // Single pending resolver — only one analysis can be in flight at a time.
+  const pendingResolverRef = useRef<((v: StockfishResult) => void) | null>(null);
   const currentScoreRef = useRef('');
   const currentPvRef = useRef<string[]>([]);
+
+  // When we call `stop` while the engine is running, the engine emits a
+  // spurious `bestmove` before the real one from the subsequent `go`.
+  // Track that so we skip it.
+  const isEngineRunningRef = useRef(false);
+  const skipNextBestmoveRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -32,7 +45,7 @@ export function useStockfish(onReady?: () => void): StockfishHook {
       }
 
       if (line === 'readyok') {
-        isReadyRef.current = true;
+        setIsReady(true);
         onReady?.();
       }
 
@@ -52,17 +65,16 @@ export function useStockfish(onReady?: () => void): StockfishHook {
       }
 
       if (line.startsWith('bestmove')) {
-        const parts = line.split(' ');
-        const bestMove = parts[1] ?? '';
-        const resolver = resolversRef.current.get(currentFenRef.current);
-        if (resolver) {
-          resolver({
-            bestMove,
-            score: currentScoreRef.current,
-            pv: currentPvRef.current,
-          });
-          resolversRef.current.delete(currentFenRef.current);
+        // Ignore the spurious bestmove emitted when we stopped a running engine.
+        if (skipNextBestmoveRef.current) {
+          skipNextBestmoveRef.current = false;
+          return;
         }
+        isEngineRunningRef.current = false;
+        const bestMove = line.split(' ')[1] ?? '';
+        const resolver = pendingResolverRef.current;
+        pendingResolverRef.current = null;
+        resolver?.({ bestMove, score: currentScoreRef.current, pv: currentPvRef.current });
         currentScoreRef.current = '';
         currentPvRef.current = [];
       }
@@ -81,21 +93,25 @@ export function useStockfish(onReady?: () => void): StockfishHook {
     workerRef.current?.postMessage(cmd);
   }, []);
 
-  const getBestMove = useCallback((fen: string, movetime: number): Promise<{ bestMove: string; score: string; pv: string[] }> => {
+  const getBestMove = useCallback((fen: string, movetime: number): Promise<StockfishResult> => {
     return new Promise((resolve) => {
       if (!workerRef.current) {
         resolve({ bestMove: '', score: '0', pv: [] });
         return;
       }
-      currentFenRef.current = fen;
+      // If the engine is mid-calculation, `stop` will trigger a bestmove we must ignore.
+      if (isEngineRunningRef.current) {
+        skipNextBestmoveRef.current = true;
+      }
+      pendingResolverRef.current = resolve;
       currentScoreRef.current = '';
       currentPvRef.current = [];
-      resolversRef.current.set(fen, resolve);
       workerRef.current.postMessage('stop');
       workerRef.current.postMessage(`position fen ${fen}`);
       workerRef.current.postMessage(`go movetime ${movetime}`);
+      isEngineRunningRef.current = true;
     });
   }, []);
 
-  return { sendCommand, getBestMove, isReady: isReadyRef.current };
+  return { sendCommand, getBestMove, isReady };
 }

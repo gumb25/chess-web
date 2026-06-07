@@ -165,7 +165,7 @@ export default function PlayMode({ settings, initialFen, initialColor, onSetting
   const turnLabel = isPlayerTurn ? 'Your turn' : 'Engine thinking…';
 
   return (
-    <div className="flex flex-col items-center gap-2 py-2">
+    <div className="flex flex-col items-center gap-2 py-2 px-3">
       <div className="flex items-center justify-between w-full max-w-[480px] px-1">
         <div>
           <div className="text-sm font-semibold text-gray-700">{gameState === 'over' ? statusMsg : turnLabel}</div>
