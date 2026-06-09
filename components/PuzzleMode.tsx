@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Chess, Square } from 'chess.js';
 import ChessBoard from './ChessBoard';
 import { Puzzle, AppSettings, DayStats } from '@/lib/types';
-import { saveDayStats, saveResult } from '@/lib/storage';
+import { saveResult } from '@/lib/storage';
 
 interface Props {
   settings: AppSettings;
@@ -30,6 +30,23 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
   const [showSolution, setShowSolution] = useState(false);
   const [checkmateMsg, setCheckmateMsg] = useState<string | null>(null);
   const usedHintRef = useRef(false);
+  const scoredRef = useRef(false);
+
+  // Records the outcome of the current puzzle exactly once. Using a hint (or
+  // revealing the solution) downgrades a solve to a fail.
+  const recordResult = useCallback((solved: boolean) => {
+    if (!puzzle || scoredRef.current) return;
+    scoredRef.current = true;
+    const success = solved && !usedHintRef.current;
+    const newStats: DayStats = {
+      ...dayStats,
+      correct: dayStats.correct + (success ? 1 : 0),
+      incorrect: dayStats.incorrect + (success ? 0 : 1),
+      played: dayStats.played + 1,
+    };
+    onDayStatsChange(newStats);
+    saveResult({ puzzleId: puzzle.id, solved: success, usedHint: usedHintRef.current });
+  }, [puzzle, dayStats, onDayStatsChange]);
 
   useEffect(() => {
     fetch('/puzzles.json')
@@ -65,6 +82,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
     setShowSolution(false);
     setCheckmateMsg(null);
     usedHintRef.current = false;
+    scoredRef.current = false;
     setFlipped(c.turn() === 'b');
   }, []);
 
@@ -81,10 +99,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
 
     if (uciNorm !== expectedNorm) {
       setState('failed');
-      const newStats = { ...dayStats, incorrect: dayStats.incorrect + 1, played: dayStats.played + 1 };
-      onDayStatsChange(newStats);
-      saveDayStats(newStats);
-      saveResult({ puzzleId: puzzle.id, solved: false, usedHint: usedHintRef.current });
+      recordResult(false);
       return false;
     }
 
@@ -100,10 +115,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
       setChess(c);
       setMoveIndex(nextIndex);
       setState('complete');
-      const newStats = { ...dayStats, correct: dayStats.correct + 1, played: dayStats.played + 1 };
-      onDayStatsChange(newStats);
-      saveDayStats(newStats);
-      saveResult({ puzzleId: puzzle.id, solved: true, usedHint: usedHintRef.current });
+      recordResult(true);
       if (c.isCheckmate()) setCheckmateMsg("Brilliant — you delivered checkmate!");
       return true;
     }
@@ -122,16 +134,13 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
       setMoveIndex(nextIndex + 1);
       if (nextIndex + 1 >= puzzle.moves.length) {
         setState('complete');
-        const newStats = { ...dayStats, correct: dayStats.correct + 1, played: dayStats.played + 1 };
-        onDayStatsChange(newStats);
-        saveDayStats(newStats);
-        saveResult({ puzzleId: puzzle.id, solved: true, usedHint: usedHintRef.current });
+        recordResult(true);
         if (c2.isCheckmate()) setCheckmateMsg("Brilliant — you delivered checkmate!");
       }
     }, 600);
 
     return true;
-  }, [puzzle, state, moveIndex, chess, dayStats, onDayStatsChange]);
+  }, [puzzle, state, moveIndex, chess, recordResult]);
 
   const handleHint = () => {
     if (!puzzle || state !== 'solving') return;
@@ -163,12 +172,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
     setSolutionMoves(sans);
     setShowSolution(true);
     setState('complete');
-    if (state !== 'complete') {
-      const newStats = { ...dayStats, incorrect: dayStats.incorrect + 1, played: dayStats.played + 1 };
-      onDayStatsChange(newStats);
-      saveDayStats(newStats);
-      if (puzzle) saveResult({ puzzleId: puzzle.id, solved: false, usedHint: true });
-    }
+    recordResult(false);
   };
 
   const handleRetry = () => {

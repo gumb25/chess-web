@@ -14,6 +14,12 @@ interface Props {
   onPlayFromHere?: (fen: string, color: 'w' | 'b') => void;
 }
 
+// Flip the sign of a Stockfish score string ("45", "-45", "M3", "-M3").
+function negateScore(s: string): string {
+  if (!s || s === '0') return s;
+  return s.startsWith('-') ? s.slice(1) : `-${s}`;
+}
+
 export default function AnalyzeMode({ settings, initialFen, initialMoves, initialPlayerColor, onPlayFromHere }: Props) {
   const [chess, setChess] = useState<Chess>(() => {
     const c = new Chess(initialFen ?? undefined);
@@ -44,7 +50,10 @@ export default function AnalyzeMode({ settings, initialFen, initialMoves, initia
     setIsAnalyzing(true);
     try {
       const result = await getBestMove(c.fen(), 800);
-      setEvalScore(result.score);
+      // Stockfish reports the score relative to the side to move. Normalize
+      // it so the eval bar is always from White's perspective.
+      const score = c.turn() === 'b' ? negateScore(result.score) : result.score;
+      setEvalScore(score);
       const pvArrows: Arrow[] = result.pv.slice(0, 5).map((uci, i) => ({
         from: uci.slice(0, 2) as Square,
         to: uci.slice(2, 4) as Square,
