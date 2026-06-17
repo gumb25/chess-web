@@ -167,9 +167,9 @@ export default function PlayMode({ settings, initialFen, initialColor, onSetting
   return (
     <div className="flex flex-col items-center gap-2 py-2 px-3">
       <div className="flex items-center justify-between w-full max-w-[480px] px-1">
-        <div>
+        <div className="flex items-center gap-2">
           <div className="text-sm font-semibold text-gray-700">{gameState === 'over' ? statusMsg : turnLabel}</div>
-          {thinking && <div className="text-xs text-blue-500">Stockfish is thinking…</div>}
+          {thinking && <span className="text-base text-gray-400 animate-spin" style={{ display: 'inline-block' }}>⚙</span>}
         </div>
         <button onClick={() => setShowSettings(s => !s)} className="text-gray-400 hover:text-gray-600 text-lg" title="Engine settings">⚙</button>
       </div>

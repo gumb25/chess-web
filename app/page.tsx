@@ -78,7 +78,7 @@ export default function App() {
         <span className="text-lg font-bold text-gray-800 tracking-tight">Chess</span>
       </header>
 
-      <main className="flex-1 overflow-y-auto pb-20">
+      <main className="flex-1 overflow-y-auto pb-28">
         {tab === 'puzzle' && (
           <PuzzleMode
             settings={settings}
@@ -113,7 +113,7 @@ export default function App() {
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex">
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`relative flex-1 flex flex-col items-center py-2 gap-0.5 text-[10px] font-medium transition-colors ${tab === t.id ? 'text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}>
+            className={`relative flex-1 flex flex-col items-center pt-2 pb-5 gap-0.5 text-[10px] font-medium transition-colors ${tab === t.id ? 'text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}>
             <span className="text-lg leading-tight">{t.icon}</span>
             <span>{t.label}</span>
             {tab === t.id && <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-gray-900 rounded-t-full"/>}
