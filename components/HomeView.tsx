@@ -7,9 +7,10 @@ interface Props {
   dayStats: DayStats;
   onPuzzle: () => void;
   onPlay: () => void;
+  onLearn: () => void;
 }
 
-export default function HomeView({ dayStats, onPuzzle, onPlay }: Props) {
+export default function HomeView({ dayStats, onPuzzle, onPlay, onLearn }: Props) {
   const accuracy = dayStats.played > 0
     ? Math.round((dayStats.correct / dayStats.played) * 100)
     : null;
@@ -17,11 +18,11 @@ export default function HomeView({ dayStats, onPuzzle, onPlay }: Props) {
   return (
     <div className="min-h-screen flex flex-col bg-[#f8f8f7]">
       {/* Hero */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 gap-10">
+      <div className="flex flex-col items-center px-6 pt-10 pb-8 gap-8">
         <div className="text-center">
-          <div className="text-7xl mb-4 select-none">♔</div>
-          <h1 className="text-4xl font-bold text-gray-900 tracking-tight">Chess</h1>
-          <p className="text-gray-400 mt-2 text-base">Train. Play. Improve.</p>
+          <div className="text-6xl mb-3 select-none">♔</div>
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Chess</h1>
+          <p className="text-gray-400 mt-1.5 text-base">Train. Play. Improve.</p>
         </div>
 
         {/* Action cards */}
@@ -48,6 +49,18 @@ export default function HomeView({ dayStats, onPuzzle, onPlay }: Props) {
               <div className="text-sm text-gray-400 mt-0.5">Challenge Stockfish</div>
             </div>
             <span className="ml-auto text-gray-600 text-xl">›</span>
+          </button>
+
+          <button
+            onClick={onLearn}
+            className="w-full bg-white border border-gray-200 rounded-2xl px-6 py-5 flex items-center gap-5 shadow-sm hover:shadow-md hover:border-gray-300 active:scale-[0.98] transition-all text-left"
+          >
+            <span className="text-4xl select-none">📖</span>
+            <div>
+              <div className="text-lg font-bold text-gray-900">Learn Openings</div>
+              <div className="text-sm text-gray-400 mt-0.5">Explore opening theory</div>
+            </div>
+            <span className="ml-auto text-gray-300 text-xl">›</span>
           </button>
         </div>
 
