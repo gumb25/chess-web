@@ -10,12 +10,14 @@ const HomeView = dynamic(() => import('@/components/HomeView'), { ssr: false });
 const PuzzleMode = dynamic(() => import('@/components/PuzzleMode'), { ssr: false });
 const PlayMode = dynamic(() => import('@/components/PlayMode'), { ssr: false });
 const AnalyzeMode = dynamic(() => import('@/components/AnalyzeMode'), { ssr: false });
+const OpeningMode = dynamic(() => import('@/components/OpeningMode'), { ssr: false });
 const StatsView = dynamic(() => import('@/components/StatsView'), { ssr: false });
 const SettingsView = dynamic(() => import('@/components/SettingsView'), { ssr: false });
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'puzzle',   label: 'Puzzles',  icon: '♟' },
   { id: 'play',     label: 'Play',     icon: '⚔' },
+  { id: 'openings', label: 'Learn',    icon: '📖' },
   { id: 'analyze',  label: 'Analyze',  icon: '🔍' },
   { id: 'stats',    label: 'Stats',    icon: '📊' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
@@ -60,6 +62,7 @@ export default function App() {
         dayStats={dayStats}
         onPuzzle={() => setTab('puzzle')}
         onPlay={() => setTab('play')}
+        onLearn={() => setTab('openings')}
       />
     );
   }
@@ -106,6 +109,7 @@ export default function App() {
             onPlayFromHere={handlePlayFromHere}
           />
         )}
+        {tab === 'openings' && <OpeningMode settings={settings} />}
         {tab === 'stats' && <StatsView results={allStats} />}
         {tab === 'settings' && <SettingsView settings={settings} onChange={handleSettingsChange} />}
       </main>
