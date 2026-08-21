@@ -148,8 +148,9 @@ export function BoardPieceG({ color, type, x, y, cellSize }: {
   const key = `${color}${type}`;
   const content = PIECES[key];
   if (!content) return null;
-  const scale = (cellSize * 0.88) / 45;
-  const offset = cellSize * 0.06;
+  const fill = 0.96; // fraction of the cell the piece occupies
+  const scale = (cellSize * fill) / 45;
+  const offset = (cellSize * (1 - fill)) / 2; // keep centered in the cell
   return (
     <g transform={`translate(${x + offset},${y + offset}) scale(${scale})`} pointerEvents="none">
       {content}

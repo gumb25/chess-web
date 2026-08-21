@@ -177,16 +177,13 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
 
   const handleRetry = () => {
     if (!puzzle) return;
-    const c = new Chess(puzzle.fen);
-    const blunder = puzzle.moves[0];
-    c.move({ from: blunder.slice(0, 2) as Square, to: blunder.slice(2, 4) as Square, promotion: blunder[4] });
-    setChess(c);
-    setMoveIndex(1);
+    // A wrong move is never applied to the board, so `chess` and `moveIndex`
+    // are already at the position of the move the user missed. Just restore
+    // the solving state so they can retry that exact move.
     setState('solving');
     setHintLevel(0);
     setHintSquare(null);
     setHintDestSquare(null);
-    setLastMove({ from: blunder.slice(0, 2) as Square, to: blunder.slice(2, 4) as Square });
     setSolutionMoves([]);
     setShowSolution(false);
     setCheckmateMsg(null);
