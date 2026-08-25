@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { Tab, AppSettings } from '@/lib/types';
 import { loadSettings, saveSettings, loadAllStats, loadDayStats, saveDayStats } from '@/lib/storage';
 import type { DayStats, PuzzleResult } from '@/lib/types';
+import { setSoundEnabled } from '@/lib/sound';
 
 const HomeView = dynamic(() => import('@/components/HomeView'), { ssr: false });
 const PuzzleMode = dynamic(() => import('@/components/PuzzleMode'), { ssr: false });
@@ -34,6 +35,11 @@ export default function App() {
   useEffect(() => {
     setAllStats(loadAllStats());
   }, []);
+
+  // Keep the sound module in sync with the user's setting.
+  useEffect(() => {
+    setSoundEnabled(settings.soundEnabled);
+  }, [settings.soundEnabled]);
 
   const handleSettingsChange = (s: AppSettings) => {
     setSettings(s);

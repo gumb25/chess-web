@@ -49,6 +49,23 @@ export default function SettingsView({ settings, onChange }: Props) {
         </div>
       </div>
 
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center justify-between">
+        <div>
+          <div className="text-sm font-medium text-gray-600">Move Sounds</div>
+          <div className="text-xs text-gray-400 mt-0.5">Play a sound on each move</div>
+        </div>
+        <button
+          onClick={() => update({ soundEnabled: !settings.soundEnabled })}
+          role="switch"
+          aria-checked={settings.soundEnabled}
+          className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${settings.soundEnabled ? 'bg-gray-800' : 'bg-gray-300'}`}
+        >
+          <span
+            className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${settings.soundEnabled ? 'translate-x-5' : 'translate-x-0'}`}
+          />
+        </button>
+      </div>
+
       <div className="bg-white border border-gray-200 rounded-2xl p-4">
         <div className="text-sm font-medium text-gray-600 mb-3">Puzzle Difficulty</div>
         <div className="flex items-center gap-3 mb-2">
