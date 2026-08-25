@@ -5,6 +5,7 @@ import { Chess, Square } from 'chess.js';
 import ChessBoard from './ChessBoard';
 import { Puzzle, AppSettings, DayStats } from '@/lib/types';
 import { saveResult } from '@/lib/storage';
+import { playSound } from '@/lib/sound';
 
 interface Props {
   settings: AppSettings;
@@ -25,12 +26,20 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
   const [hintSquare, setHintSquare] = useState<Square | null>(null);
   const [hintDestSquare, setHintDestSquare] = useState<Square | null>(null);
   const [lastMove, setLastMove] = useState<{ from: Square; to: Square } | null>(null);
-  const [solutionMoves, setSolutionMoves] = useState<string[]>([]);
   const [flipped, setFlipped] = useState(false);
   const [showSolution, setShowSolution] = useState(false);
   const [checkmateMsg, setCheckmateMsg] = useState<string | null>(null);
   const usedHintRef = useRef(false);
   const scoredRef = useRef(false);
+  const solutionTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const clearSolutionTimers = useCallback(() => {
+    solutionTimersRef.current.forEach(clearTimeout);
+    solutionTimersRef.current = [];
+  }, []);
+
+  // Cancel any in-flight solution animation when the component unmounts.
+  useEffect(() => () => clearSolutionTimers(), [clearSolutionTimers]);
 
   // Records the outcome of the current puzzle exactly once. Using a hint (or
   // revealing the solution) downgrades a solve to a fail.
@@ -78,7 +87,6 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
     setHintSquare(null);
     setHintDestSquare(null);
     setLastMove({ from, to });
-    setSolutionMoves([]);
     setShowSolution(false);
     setCheckmateMsg(null);
     usedHintRef.current = false;
@@ -104,7 +112,8 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
     }
 
     const c = new Chess(chess.fen());
-    c.move({ from, to, promotion: promotion ?? (expected[4] as string | undefined) });
+    const playerResult = c.move({ from, to, promotion: promotion ?? (expected[4] as string | undefined) });
+    playSound(playerResult && (playerResult.captured || playerResult.flags.includes('e')) ? 'capture' : 'move');
     setLastMove({ from, to });
     setHintSquare(null);
     setHintDestSquare(null);
@@ -128,7 +137,8 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
       const c2 = new Chess(c.fen());
       const oFrom = opponentMove.slice(0, 2) as Square;
       const oTo = opponentMove.slice(2, 4) as Square;
-      c2.move({ from: oFrom, to: oTo, promotion: opponentMove[4] });
+      const oppResult = c2.move({ from: oFrom, to: oTo, promotion: opponentMove[4] });
+      playSound(oppResult && (oppResult.captured || oppResult.flags.includes('e')) ? 'capture' : 'move');
       setLastMove({ from: oFrom, to: oTo });
       setChess(c2);
       setMoveIndex(nextIndex + 1);
@@ -162,37 +172,54 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
   const handleShowSolution = () => {
     if (!puzzle) return;
     usedHintRef.current = true;
-    const remaining = puzzle.moves.slice(moveIndex);
-    const c = new Chess(chess.fen());
-    const sans: string[] = [];
-    for (const uci of remaining) {
-      const result = c.move({ from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: uci[4] });
-      if (result) sans.push(result.san);
-    }
-    setSolutionMoves(sans);
-    setShowSolution(true);
-    setState('complete');
     recordResult(false);
+    setState('complete');
+    setHintSquare(null);
+    setHintDestSquare(null);
+    setShowSolution(true);
+
+    // Precompute each frame of the remaining solution, starting from the
+    // current position (the move the user missed).
+    const c = new Chess(chess.fen());
+    const frames: { fen: string; from: Square; to: Square; mate: boolean; capture: boolean }[] = [];
+    for (const uci of puzzle.moves.slice(moveIndex)) {
+      const from = uci.slice(0, 2) as Square;
+      const to = uci.slice(2, 4) as Square;
+      const result = c.move({ from, to, promotion: uci[4] });
+      if (!result) break;
+      frames.push({ fen: c.fen(), from, to, mate: c.isCheckmate(), capture: !!result.captured || result.flags.includes('e') });
+    }
+
+    // Play them out on the board one at a time, slow enough to follow.
+    const STEP_MS = 1000;
+    clearSolutionTimers();
+    frames.forEach((f, i) => {
+      const t = setTimeout(() => {
+        setChess(new Chess(f.fen));
+        setLastMove({ from: f.from, to: f.to });
+        playSound(f.capture ? 'capture' : 'move');
+        if (f.mate) setCheckmateMsg('Checkmate!');
+      }, STEP_MS * (i + 1));
+      solutionTimersRef.current.push(t);
+    });
   };
 
   const handleRetry = () => {
     if (!puzzle) return;
-    const c = new Chess(puzzle.fen);
-    const blunder = puzzle.moves[0];
-    c.move({ from: blunder.slice(0, 2) as Square, to: blunder.slice(2, 4) as Square, promotion: blunder[4] });
-    setChess(c);
-    setMoveIndex(1);
+    clearSolutionTimers();
+    // A wrong move is never applied to the board, so `chess` and `moveIndex`
+    // are already at the position of the move the user missed. Just restore
+    // the solving state so they can retry that exact move.
     setState('solving');
     setHintLevel(0);
     setHintSquare(null);
     setHintDestSquare(null);
-    setLastMove({ from: blunder.slice(0, 2) as Square, to: blunder.slice(2, 4) as Square });
-    setSolutionMoves([]);
     setShowSolution(false);
     setCheckmateMsg(null);
   };
 
   const handleNextPuzzle = () => {
+    clearSolutionTimers();
     if (puzzles.length > 0) loadPuzzle(puzzles, settings);
   };
 
@@ -239,10 +266,9 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
         </div>
       )}
 
-      {showSolution && solutionMoves.length > 0 && (
-        <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 max-w-[480px] w-full">
-          <div className="text-sm font-medium text-gray-600 mb-1">Solution:</div>
-          <div className="text-sm text-gray-800">{solutionMoves.join(' → ')}</div>
+      {showSolution && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 max-w-[480px] w-full text-center text-sm font-medium text-blue-700">
+          Playing solution — watch the board
         </div>
       )}
 

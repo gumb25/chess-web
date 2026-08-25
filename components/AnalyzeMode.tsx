@@ -5,6 +5,7 @@ import { Chess, Square } from 'chess.js';
 import ChessBoard, { Arrow } from './ChessBoard';
 import { AppSettings } from '@/lib/types';
 import { useStockfish } from '@/hooks/useStockfish';
+import { playMoveSound } from '@/lib/sound';
 
 interface Props {
   settings: AppSettings;
@@ -91,6 +92,7 @@ export default function AnalyzeMode({ settings, initialFen, initialMoves, initia
     const c = new Chess(chess.fen());
     const result = c.move({ from, to, promotion });
     if (!result) return false;
+    playMoveSound(result);
 
     setHistory(h => [...h, chess]);
     setChess(c);
