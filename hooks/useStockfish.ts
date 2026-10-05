@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 
-interface StockfishResult {
+export interface StockfishResult {
   bestMove: string;
   score: string;
   pv: string[];

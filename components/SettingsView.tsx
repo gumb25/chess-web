@@ -10,18 +10,34 @@ interface Props {
 
 export default function SettingsView({ settings, onChange }: Props) {
   const [themesOpen, setThemesOpen] = useState(false);
+  // A stored empty list means "no filter" (every type). While the user has
+  // just cleared every box we show them all unchecked, so the next tick
+  // starts a fresh selection instead of unchecking one of "all".
+  const [noneChecked, setNoneChecked] = useState(false);
 
   const update = (patch: Partial<AppSettings>) => onChange({ ...settings, ...patch });
 
-  const toggleTheme = (t: string) => {
-    const set = new Set(settings.puzzleThemes);
-    if (set.has(t)) set.delete(t); else set.add(t);
-    update({ puzzleThemes: Array.from(set) });
+  const allSelected = settings.puzzleThemes.length === 0 || settings.puzzleThemes.length === ALL_PUZZLE_THEMES.length;
+  const isChecked = (t: string) => !noneChecked && (allSelected || settings.puzzleThemes.includes(t));
+
+  const setThemes = (themes: string[]) => {
+    setNoneChecked(themes.length === 0);
+    update({ puzzleThemes: themes.length === ALL_PUZZLE_THEMES.length ? [] : themes });
   };
 
-  const themesSummary = settings.puzzleThemes.length === 0
-    ? `All (${ALL_PUZZLE_THEMES.length})`
-    : settings.puzzleThemes.length === ALL_PUZZLE_THEMES.length
+  const toggleTheme = (t: string) => {
+    const checked = ALL_PUZZLE_THEMES.filter(isChecked);
+    setThemes(checked.includes(t) ? checked.filter(x => x !== t) : [...checked, t]);
+  };
+
+  const selectAll = () => {
+    setNoneChecked(false);
+    update({ puzzleThemes: [] });
+  };
+
+  const themesSummary = noneChecked
+    ? 'None (all puzzles)'
+    : allSelected
     ? `All (${ALL_PUZZLE_THEMES.length})`
     : `${settings.puzzleThemes.length} of ${ALL_PUZZLE_THEMES.length}`;
 
@@ -71,13 +87,13 @@ export default function SettingsView({ settings, onChange }: Props) {
         <div className="flex items-center gap-3 mb-2">
           <span className="text-xs text-gray-500 w-20">Min Rating</span>
           <input type="range" min={400} max={2400} step={100} value={settings.minRating}
-            onChange={e => update({ minRating: +e.target.value })} className="flex-1 accent-gray-800"/>
+            onChange={e => { const v = +e.target.value; update({ minRating: v, maxRating: Math.max(v, settings.maxRating) }); }} className="flex-1 accent-gray-800"/>
           <span className="text-sm font-medium text-gray-700 w-12 text-right">{settings.minRating}</span>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-500 w-20">Max Rating</span>
           <input type="range" min={800} max={2800} step={100} value={settings.maxRating}
-            onChange={e => update({ maxRating: +e.target.value })} className="flex-1 accent-gray-800"/>
+            onChange={e => { const v = +e.target.value; update({ maxRating: v, minRating: Math.min(v, settings.minRating) }); }} className="flex-1 accent-gray-800"/>
           <span className="text-sm font-medium text-gray-700 w-12 text-right">{settings.maxRating}</span>
         </div>
       </div>
@@ -91,17 +107,17 @@ export default function SettingsView({ settings, onChange }: Props) {
         {themesOpen && (
           <div className="border-t border-gray-100 p-3">
             <div className="flex gap-2 mb-2">
-              <button onClick={() => update({ puzzleThemes: [...ALL_PUZZLE_THEMES] })}
+              <button onClick={selectAll}
                 className="text-xs px-3 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">Select All</button>
-              <button onClick={() => update({ puzzleThemes: [] })}
+              <button onClick={() => setThemes([])}
                 className="text-xs px-3 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">Deselect All</button>
             </div>
             <div className="max-h-64 overflow-y-auto flex flex-col gap-0.5">
               {ALL_PUZZLE_THEMES.map(t => (
                 <button key={t} onClick={() => toggleTheme(t)}
                   className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 text-left transition-colors w-full">
-                  <span className={`w-4 h-4 rounded border flex items-center justify-center text-xs transition-colors ${(settings.puzzleThemes.length === 0 || settings.puzzleThemes.includes(t)) ? 'bg-gray-800 border-gray-800 text-white' : 'border-gray-300'}`}>
-                    {(settings.puzzleThemes.length === 0 || settings.puzzleThemes.includes(t)) ? '✓' : ''}
+                  <span className={`w-4 h-4 rounded border flex items-center justify-center text-xs transition-colors ${isChecked(t) ? 'bg-gray-800 border-gray-800 text-white' : 'border-gray-300'}`}>
+                    {isChecked(t) ? '✓' : ''}
                   </span>
                   <span className="text-sm text-gray-700">{t}</span>
                 </button>

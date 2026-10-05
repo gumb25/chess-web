@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useId } from 'react';
 import { Chess, Square } from 'chess.js';
 import ChessPiece, { BoardPieceG } from './ChessPiece';
 import { BoardTheme, BOARD_THEMES, PieceColor, PieceType } from '@/lib/types';
@@ -49,6 +49,17 @@ export default function ChessBoard({
   const [selected, setSelected] = useState<Square | null>(null);
   const [legalMoves, setLegalMoves] = useState<Square[]>([]);
   const [promotionPending, setPromotionPending] = useState<{ from: Square; to: Square } | null>(null);
+  const markerPrefix = useId();
+
+  // A new position (move played, undo, next puzzle…) invalidates any
+  // selection or pending promotion made on the old one.
+  const [prevChess, setPrevChess] = useState(chess);
+  if (chess !== prevChess) {
+    setPrevChess(chess);
+    setSelected(null);
+    setLegalMoves([]);
+    setPromotionPending(null);
+  }
 
   const colors = BOARD_THEMES[theme];
   const BOARD_SIZE = 480;
@@ -133,6 +144,7 @@ export default function ChessBoard({
       const dx = x2 - x1;
       const dy = y2 - y1;
       const len = Math.sqrt(dx * dx + dy * dy);
+      if (len === 0) return null;
       const arrowHeadLen = 18;
       const shorten = arrowHeadLen * 0.7;
       const ex = x2 - (dx / len) * shorten;
@@ -142,14 +154,14 @@ export default function ChessBoard({
       return (
         <g key={i} opacity={opacity} pointerEvents="none">
           <defs>
-            <marker id={`ah-${i}`} markerWidth="4" markerHeight="4" refX="2" refY="2" orient="auto">
+            <marker id={`${markerPrefix}ah-${i}`} markerWidth="4" markerHeight="4" refX="2" refY="2" orient="auto">
               <path d="M0,0 L4,2 L0,4 Z" fill={color}/>
             </marker>
           </defs>
           <line
             x1={x1} y1={y1} x2={ex} y2={ey}
             stroke={color} strokeWidth="9" strokeLinecap="round"
-            markerEnd={`url(#ah-${i})`}
+            markerEnd={`url(#${markerPrefix}ah-${i})`}
           />
         </g>
       );
@@ -222,8 +234,11 @@ export default function ChessBoard({
       </svg>
 
       {promotionPending && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-10">
-          <div className="bg-white rounded-xl p-4 flex gap-3 shadow-2xl">
+        <div
+          className="absolute inset-0 flex items-center justify-center bg-black/60 z-10"
+          onClick={() => setPromotionPending(null)}
+        >
+          <div className="bg-white rounded-xl p-4 flex gap-3 shadow-2xl" onClick={e => e.stopPropagation()}>
             {(['q', 'r', 'b', 'n'] as PieceType[]).map(p => (
               <button
                 key={p}
