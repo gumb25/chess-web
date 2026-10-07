@@ -29,6 +29,8 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
   const [flipped, setFlipped] = useState(false);
   const [showSolution, setShowSolution] = useState(false);
   const [checkmateMsg, setCheckmateMsg] = useState<string | null>(null);
+  const [playerColor, setPlayerColor] = useState<'w' | 'b'>('w');
+  const [loadError, setLoadError] = useState(false);
   const usedHintRef = useRef(false);
   const scoredRef = useRef(false);
   const solutionTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -38,7 +40,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
     solutionTimersRef.current = [];
   }, []);
 
-  // Cancel any in-flight solution animation when the component unmounts.
+  // Cancel any in-flight solution animation / opponent reply on unmount.
   useEffect(() => () => clearSolutionTimers(), [clearSolutionTimers]);
 
   // Records the outcome of the current puzzle exactly once. Using a hint (or
@@ -47,21 +49,19 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
     if (!puzzle || scoredRef.current) return;
     scoredRef.current = true;
     const success = solved && !usedHintRef.current;
+    // Save the result first: the parent reloads all-time stats on change.
+    saveResult({ puzzleId: puzzle.id, solved: success, usedHint: usedHintRef.current });
+    // Start a fresh tally if the app was left open past midnight.
+    const today = new Date().toISOString().slice(0, 10);
+    const base: DayStats = dayStats.date === today ? dayStats : { date: today, correct: 0, incorrect: 0, played: 0 };
     const newStats: DayStats = {
-      ...dayStats,
-      correct: dayStats.correct + (success ? 1 : 0),
-      incorrect: dayStats.incorrect + (success ? 0 : 1),
-      played: dayStats.played + 1,
+      ...base,
+      correct: base.correct + (success ? 1 : 0),
+      incorrect: base.incorrect + (success ? 0 : 1),
+      played: base.played + 1,
     };
     onDayStatsChange(newStats);
-    saveResult({ puzzleId: puzzle.id, solved: success, usedHint: usedHintRef.current });
   }, [puzzle, dayStats, onDayStatsChange]);
-
-  useEffect(() => {
-    fetch('/puzzles.json')
-      .then(r => r.json())
-      .then((data: Puzzle[]) => setPuzzles(data));
-  }, []);
 
   const loadPuzzle = useCallback((list: Puzzle[], cfg: AppSettings) => {
     let filtered = list.filter(p =>
@@ -92,14 +92,24 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
     usedHintRef.current = false;
     scoredRef.current = false;
     setFlipped(c.turn() === 'b');
+    setPlayerColor(c.turn());
   }, []);
 
   useEffect(() => {
-    if (puzzles.length > 0) loadPuzzle(puzzles, settings);
-  }, [puzzles]); // eslint-disable-line react-hooks/exhaustive-deps
+    fetch('/puzzles.json')
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((data: Puzzle[]) => {
+        setPuzzles(data);
+        if (data.length > 0) loadPuzzle(data, settings);
+      })
+      .catch(() => setLoadError(true));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMove = useCallback((from: Square, to: Square, promotion?: string): boolean => {
-    if (!puzzle || state !== 'solving') return false;
+    if (!puzzle || state !== 'solving' || chess.turn() !== playerColor) return false;
     const expected = puzzle.moves[moveIndex];
     const uci = `${from}${to}${promotion ?? ''}`;
     const expectedNorm = expected.length === 5 ? expected : expected.slice(0, 4);
@@ -133,7 +143,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
     setMoveIndex(nextIndex);
 
     const opponentMove = puzzle.moves[nextIndex];
-    setTimeout(() => {
+    const t = setTimeout(() => {
       const c2 = new Chess(c.fen());
       const oFrom = opponentMove.slice(0, 2) as Square;
       const oTo = opponentMove.slice(2, 4) as Square;
@@ -148,12 +158,16 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
         if (c2.isCheckmate()) setCheckmateMsg("Brilliant — you delivered checkmate!");
       }
     }, 600);
+    solutionTimersRef.current.push(t);
 
     return true;
-  }, [puzzle, state, moveIndex, chess, recordResult]);
+  }, [puzzle, state, moveIndex, chess, playerColor, recordResult]);
+
+  // The opponent's scripted reply is still on its way.
+  const opponentReplying = state === 'solving' && chess.turn() !== playerColor;
 
   const handleHint = () => {
-    if (!puzzle || state !== 'solving') return;
+    if (!puzzle || state !== 'solving' || opponentReplying) return;
     usedHintRef.current = true;
     const move = puzzle.moves[moveIndex];
     const from = move.slice(0, 2) as Square;
@@ -170,7 +184,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
   };
 
   const handleShowSolution = () => {
-    if (!puzzle) return;
+    if (!puzzle || opponentReplying) return;
     usedHintRef.current = true;
     recordResult(false);
     setState('complete');
@@ -199,6 +213,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
         setLastMove({ from: f.from, to: f.to });
         playSound(f.capture ? 'capture' : 'move');
         if (f.mate) setCheckmateMsg('Checkmate!');
+        if (i === frames.length - 1) setShowSolution(false);
       }, STEP_MS * (i + 1));
       solutionTimersRef.current.push(t);
     });
@@ -226,7 +241,9 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
   if (!puzzle) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500 text-lg">Loading puzzles…</div>
+        <div className={`text-lg ${loadError ? 'text-red-500' : 'text-gray-500'}`}>
+          {loadError ? "Couldn't load puzzles." : 'Loading puzzles…'}
+        </div>
       </div>
     );
   }
@@ -254,7 +271,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
         flipped={flipped}
         theme={settings.boardTheme}
         onMove={handleMove}
-        disabled={state !== 'solving'}
+        disabled={state !== 'solving' || opponentReplying}
         hintSquare={hintSquare}
         hintDestSquare={hintDestSquare}
         lastMove={lastMove}
@@ -262,7 +279,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
 
       {checkmateMsg && (
         <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-green-700 font-medium text-center max-w-[480px] w-full">
-          Checkmate! {checkmateMsg}
+          {checkmateMsg}
         </div>
       )}
 
@@ -275,10 +292,10 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
       <div className="flex gap-2 flex-wrap justify-center max-w-[480px] w-full">
         {state === 'solving' && (
           <>
-            <button onClick={handleHint} className="flex-1 min-w-[80px] bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 rounded-xl py-2 px-4 text-sm font-medium transition-colors">
+            <button onClick={handleHint} disabled={opponentReplying} className="disabled:opacity-40 flex-1 min-w-[80px] bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 rounded-xl py-2 px-4 text-sm font-medium transition-colors">
               Hint {hintLevel > 0 ? `(${hintLevel}/2)` : ''}
             </button>
-            <button onClick={handleShowSolution} className="flex-1 min-w-[80px] bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-600 rounded-xl py-2 px-4 text-sm font-medium transition-colors">
+            <button onClick={handleShowSolution} disabled={opponentReplying} className="disabled:opacity-40 flex-1 min-w-[80px] bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-600 rounded-xl py-2 px-4 text-sm font-medium transition-colors">
               Solution
             </button>
           </>

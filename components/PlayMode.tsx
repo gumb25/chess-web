@@ -20,7 +20,9 @@ export default function PlayMode({ settings, initialFen, initialColor, onSetting
   const [gameState, setGameState] = useState<GameState>(initialFen ? 'playing' : 'setup');
   const [playerColor, setPlayerColor] = useState<'w' | 'b'>(initialColor ?? 'w');
   const [chess, setChess] = useState<Chess>(() => initialFen ? new Chess(initialFen) : new Chess());
-  const [history, setHistory] = useState<Chess[]>([]);
+  // Positions before each of the player's moves, so Undo takes back the
+  // player's last move together with the engine's reply.
+  const [history, setHistory] = useState<{ chess: Chess; lastMove: { from: Square; to: Square } | null }[]>([]);
   const [lastMove, setLastMove] = useState<{ from: Square; to: Square } | null>(null);
   const [statusMsg, setStatusMsg] = useState('');
   const [thinking, setThinking] = useState(false);
@@ -30,6 +32,9 @@ export default function PlayMode({ settings, initialFen, initialColor, onSetting
   const [hintSquare, setHintSquare] = useState<Square | null>(null);
   const [hintDestSquare, setHintDestSquare] = useState<Square | null>(null);
   const engineColorRef = useRef<'w' | 'b'>('b');
+  // Bumped whenever the game is reset/abandoned so a late engine reply for an
+  // old position is discarded instead of being played on the new board.
+  const gameIdRef = useRef(0);
 
   const { getBestMove, sendCommand } = useStockfish();
 
@@ -45,10 +50,12 @@ export default function PlayMode({ settings, initialFen, initialColor, onSetting
   };
 
   const engineMove = useCallback(async (c: Chess) => {
+    const gameId = gameIdRef.current;
     setThinking(true);
     applySkill(skill);
     try {
       const result = await getBestMove(c.fen(), 1000);
+      if (gameId !== gameIdRef.current) return;
       if (!result.bestMove || result.bestMove === '(none)') return;
       const from = result.bestMove.slice(0, 2) as Square;
       const to = result.bestMove.slice(2, 4) as Square;
@@ -61,7 +68,7 @@ export default function PlayMode({ settings, initialFen, initialColor, onSetting
       const over = checkGameOver(c2);
       if (over) { setStatusMsg(over); setGameState('over'); }
     } finally {
-      setThinking(false);
+      if (gameId === gameIdRef.current) setThinking(false);
     }
   }, [getBestMove, skill, applySkill, playerColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -74,13 +81,22 @@ export default function PlayMode({ settings, initialFen, initialColor, onSetting
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const resetHint = () => {
+    setHintSquare(null);
+    setHintDestSquare(null);
+    setHintLevel(0);
+  };
+
   const startGame = () => {
     const c = new Chess();
+    gameIdRef.current++;
     engineColorRef.current = playerColor === 'w' ? 'b' : 'w';
     setChess(c);
     setHistory([]);
     setLastMove(null);
     setStatusMsg('');
+    setThinking(false);
+    resetHint();
     setGameState('playing');
     if (playerColor === 'b') engineMove(c);
   };
@@ -92,34 +108,30 @@ export default function PlayMode({ settings, initialFen, initialColor, onSetting
     if (!result) return false;
     playMoveSound(result);
 
-    setHistory(h => [...h, chess]);
+    setHistory(h => [...h, { chess, lastMove }]);
     setChess(c);
     setLastMove({ from, to });
-    setHintSquare(null);
-    setHintDestSquare(null);
-    setHintLevel(0);
+    resetHint();
 
     const over = checkGameOver(c);
     if (over) { setStatusMsg(over); setGameState('over'); return true; }
 
     engineMove(c);
     return true;
-  }, [chess, playerColor, thinking, engineMove]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chess, lastMove, playerColor, thinking, engineMove]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleUndo = () => {
-    if (history.length < 2) return;
-    const prev = history[history.length - 2];
-    setHistory(h => h.slice(0, -2));
-    setChess(prev);
-    setLastMove(null);
-    setHintSquare(null);
-    setHintDestSquare(null);
-    setHintLevel(0);
+    if (history.length === 0 || thinking) return;
+    const prev = history[history.length - 1];
+    setHistory(h => h.slice(0, -1));
+    setChess(prev.chess);
+    setLastMove(prev.lastMove);
+    resetHint();
   };
 
   const handleHint = useCallback(async () => {
     const result = await getBestMove(chess.fen(), 600);
-    if (!result.bestMove) return;
+    if (!result.bestMove || result.bestMove === '(none)') return;
     const from = result.bestMove.slice(0, 2) as Square;
     const to = result.bestMove.slice(2, 4) as Square;
     if (hintLevel === 0) { setHintSquare(from); setHintDestSquare(null); setHintLevel(1); }
@@ -127,6 +139,8 @@ export default function PlayMode({ settings, initialFen, initialColor, onSetting
   }, [chess, getBestMove, hintLevel]);
 
   const handleResign = () => {
+    gameIdRef.current++;
+    setThinking(false);
     setStatusMsg('You resigned. Engine wins.');
     setGameState('over');
   };
@@ -150,7 +164,7 @@ export default function PlayMode({ settings, initialFen, initialColor, onSetting
           </div>
           <div>
             <label className="text-sm font-medium text-gray-600 mb-2 block">Skill Level: {skillLabel} ({skill})</label>
-            <input type="range" min={0} max={20} value={skill} onChange={e => setSkill(+e.target.value)}
+            <input type="range" min={0} max={20} value={skill} onChange={e => { const v = +e.target.value; setSkill(v); onSettingsChange({ ...settings, engineSkill: v }); }}
               className="w-full accent-gray-800"/>
             <div className="flex justify-between text-xs text-gray-400 mt-1">
               <span>Beginner</span><span>Maximum</span>
@@ -202,10 +216,10 @@ export default function PlayMode({ settings, initialFen, initialColor, onSetting
       <div className="flex gap-2 max-w-[480px] w-full">
         {gameState === 'playing' && (
           <>
-            <button onClick={handleHint} disabled={!isPlayerTurn} className="flex-1 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 rounded-xl py-2 text-sm font-medium transition-colors disabled:opacity-40">
+            <button onClick={handleHint} disabled={!isPlayerTurn || thinking} className="flex-1 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 rounded-xl py-2 text-sm font-medium transition-colors disabled:opacity-40">
               Hint {hintLevel > 0 ? `(${hintLevel}/2)` : ''}
             </button>
-            <button onClick={handleUndo} disabled={history.length < 2} className="flex-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-600 rounded-xl py-2 text-sm font-medium transition-colors disabled:opacity-40">
+            <button onClick={handleUndo} disabled={history.length === 0 || thinking} className="flex-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-600 rounded-xl py-2 text-sm font-medium transition-colors disabled:opacity-40">
               Undo
             </button>
             <button onClick={handleResign} className="flex-1 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-xl py-2 text-sm font-medium transition-colors">

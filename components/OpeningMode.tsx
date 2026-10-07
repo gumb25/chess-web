@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Chess, Square } from 'chess.js';
-import ChessBoard, { Arrow } from './ChessBoard';
+import ChessBoard from './ChessBoard';
 import { AppSettings } from '@/lib/types';
-import { useStockfish } from '@/hooks/useStockfish';
+import { useEngineAnalysis, evalBar } from '@/hooks/useEngineAnalysis';
 import { playMoveSound } from '@/lib/sound';
 
 interface OpeningInfo {
@@ -31,12 +31,6 @@ function normalEpd(fen: string) {
   return fen.split(' ').slice(0, 4).join(' ');
 }
 
-// Flip the sign of a Stockfish score string ("45", "-45", "M3", "-M3").
-function negateScore(s: string): string {
-  if (!s || s === '0') return s;
-  return s.startsWith('-') ? s.slice(1) : `-${s}`;
-}
-
 // Replay a list of SAN moves and return the resulting position + last move.
 function positionAt(sans: string[], ply: number): { chess: Chess; lastMove: { from: Square; to: Square } | null } {
   const chess = new Chess();
@@ -51,24 +45,27 @@ function positionAt(sans: string[], ply: number): { chess: Chess; lastMove: { fr
 
 export default function OpeningMode({ settings }: Props) {
   const [db, setDb] = useState<OpeningDB | null>(null);
+  const [dbError, setDbError] = useState(false);
   const [moveHistory, setMoveHistory] = useState<string[]>([]);
   const [currentPly, setCurrentPly] = useState(0);
   const [flipped, setFlipped] = useState(false);
-  const [transposition, setTransposition] = useState<string | null>(null);
   const [showNameModal, setShowNameModal] = useState(false);
-  const [evalScore, setEvalScore] = useState<string>('0');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [arrows, setArrows] = useState<Arrow[]>([]);
 
-  // EPD → first move sequence that reached it (for transposition detection)
-  const visitedRef = useRef<Map<string, string>>(new Map());
-
-  const { getBestMove, isReady } = useStockfish();
+  // EPD → first move sequence that reached it (for transposition detection).
+  // Recorded when a move is played, so navigating back and forth along the
+  // current line never changes it.
+  const [firstPaths, setFirstPaths] = useState<Map<string, string>>(
+    () => new Map([[normalEpd(new Chess().fen()), '']])
+  );
 
   useEffect(() => {
     fetch('/openings.json')
-      .then(r => r.json())
-      .then(setDb);
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(setDb)
+      .catch(() => setDbError(true));
   }, []);
 
   // Derive the board position from the move list + current ply pointer.
@@ -80,62 +77,31 @@ export default function OpeningMode({ settings }: Props) {
   const epd = normalEpd(chess.fen());
   const fen = chess.fen();
 
-  // Run Stockfish evaluation whenever the displayed position changes (and once
-  // the engine becomes ready). Score is normalized to White's perspective.
-  useEffect(() => {
-    if (!isReady) return;
-    const c = new Chess(fen);
-    if (c.isCheckmate() || c.isStalemate() || c.isDraw()) {
-      setEvalScore(c.isCheckmate() ? (c.turn() === 'w' ? '-M0' : 'M0') : '0');
-      setArrows([]);
-      return;
-    }
-    let cancelled = false;
-    setIsAnalyzing(true);
-    getBestMove(fen, 800).then(result => {
-      if (cancelled) return;
-      const score = c.turn() === 'b' ? negateScore(result.score) : result.score;
-      setEvalScore(score);
-      const pvArrows: Arrow[] = result.pv.slice(0, 5).map((uci, i) => ({
-        from: uci.slice(0, 2) as Square,
-        to: uci.slice(2, 4) as Square,
-        color: '#3b82f6',
-        opacity: Math.max(0.25, 0.82 - i * 0.14),
-      }));
-      setArrows(pvArrows);
-      setIsAnalyzing(false);
-    });
-    return () => { cancelled = true; };
-  }, [fen, isReady, getBestMove]);
+  // Stockfish evaluation of the displayed position, from White's perspective.
+  const { isReady, isAnalyzing, evalScore, arrows } = useEngineAnalysis(fen);
 
-  // Transposition detection: whenever the displayed position changes, compare
-  // the path taken to reach it against the first path we ever recorded.
-  useEffect(() => {
-    const seq = moveHistory.slice(0, currentPly).join(' ');
-    const prev = visitedRef.current.get(epd);
-    if (prev === undefined) {
-      visitedRef.current.set(epd, seq);
-      setTransposition(null);
-    } else if (prev !== seq) {
-      setTransposition(`Also reachable via: ${prev || 'starting position'}`);
-    } else {
-      setTransposition(null);
-    }
-  }, [epd, moveHistory, currentPly]);
+  const seq = moveHistory.slice(0, currentPly).join(' ');
+  const firstPath = firstPaths.get(epd);
+  const transposition = firstPath !== undefined && firstPath !== seq
+    ? `Also reachable via: ${firstPath || 'starting position'}`
+    : null;
 
   // Play a move from the current position. If we're not at the end of the
   // line, this starts a new branch (truncates the future moves).
-  const playSan = useCallback((san: string) => {
-    setMoveHistory(prev => [...prev.slice(0, currentPly), san]);
-    setCurrentPly(p => p + 1);
-  }, [currentPly]);
+  const playSan = useCallback((san: string, resultFen: string) => {
+    const path = [...moveHistory.slice(0, currentPly), san];
+    const key = normalEpd(resultFen);
+    setFirstPaths(prev => prev.has(key) ? prev : new Map(prev).set(key, path.join(' ')));
+    setMoveHistory(path);
+    setCurrentPly(currentPly + 1);
+  }, [moveHistory, currentPly]);
 
   const handleMove = useCallback((from: Square, to: Square, promotion?: string): boolean => {
     const c = new Chess(chess.fen());
     const result = c.move({ from, to, promotion });
     if (!result) return false;
     playMoveSound(result);
-    playSan(result.san);
+    playSan(result.san, c.fen());
     return true;
   }, [chess, playSan]);
 
@@ -148,7 +114,7 @@ export default function OpeningMode({ settings }: Props) {
     });
     if (!result) return;
     playMoveSound(result);
-    playSan(result.san);
+    playSan(result.san, c.fen());
   };
 
   const handleBack = () => setCurrentPly(p => Math.max(0, p - 1));
@@ -157,23 +123,14 @@ export default function OpeningMode({ settings }: Props) {
   const handleReset = () => {
     setMoveHistory([]);
     setCurrentPly(0);
-    setTransposition(null);
-    visitedRef.current.clear();
+    setFirstPaths(new Map([[normalEpd(new Chess().fen()), '']]));
   };
 
   const opening: OpeningInfo | null = db?.positions[epd] ?? null;
   const topMoves: MoveEntry[] = db?.moves[epd]?.slice(0, 3) ?? [];
-  const loading = db === null;
+  const loading = db === null && !dbError;
 
-  // Eval bar derived values (same math as Analyze board)
-  const evalNum = parseFloat(evalScore.replace('M', '')) || 0;
-  const isMate = evalScore.includes('M');
-  const whiteAdvantage = isMate
-    ? (evalScore.startsWith('-') ? 0 : 100)
-    : Math.min(100, Math.max(0, 50 + evalNum / 10));
-  const evalLabel = isMate
-    ? evalScore
-    : `${evalNum > 0 ? '+' : ''}${(evalNum / 100).toFixed(2)}`;
+  const { whiteAdvantage, label: evalLabel } = evalBar(evalScore);
 
   return (
     <div className="flex flex-col items-center gap-2 py-2 px-3">
@@ -183,6 +140,8 @@ export default function OpeningMode({ settings }: Props) {
         <div className="h-8 flex items-center">
           {loading ? (
             <div className="text-sm text-gray-400">Loading opening database…</div>
+          ) : dbError ? (
+            <div className="text-sm text-red-500">Couldn&apos;t load the opening database.</div>
           ) : opening ? (
             <button
               onClick={() => setShowNameModal(true)}
@@ -221,8 +180,8 @@ export default function OpeningMode({ settings }: Props) {
         <span className="text-xs text-gray-500 w-10 text-right">
           {isReady ? evalLabel : '…'}
         </span>
-        <div className="flex-1 h-4 rounded-full overflow-hidden flex">
-          <div style={{ width: `${whiteAdvantage}%`, background: '#ffffff', flexShrink: 0 }}/>
+        <div className="flex-1 h-4 rounded-full overflow-hidden flex border border-gray-200">
+          <div style={{ width: `${whiteAdvantage}%`, background: '#ffffff', flexShrink: 0, transition: 'width 300ms' }}/>
           <div style={{ flex: 1, background: '#000000' }}/>
         </div>
         {isAnalyzing && <span className="text-xs text-gray-300">⚙</span>}
@@ -271,7 +230,7 @@ export default function OpeningMode({ settings }: Props) {
 
         {topMoves.length === 0 ? (
           <div className="px-4 py-4 text-sm text-gray-400">
-            {loading ? 'Loading…' : 'End of opening theory'}
+            {loading ? 'Loading…' : dbError ? 'Unavailable' : 'End of opening theory'}
           </div>
         ) : (
           <div className="divide-y divide-gray-50">
