@@ -32,7 +32,6 @@ export interface AppSettings {
   minRating: number;
   maxRating: number;
   engineSkill: number;
-  soundEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -41,7 +40,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   minRating: 800,
   maxRating: 2400,
   engineSkill: 10,
-  soundEnabled: true,
 };
 
 export const BOARD_THEMES: Record<BoardTheme, { light: string; dark: string }> = {

@@ -1,11 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Tab, AppSettings } from '@/lib/types';
 import { loadSettings, saveSettings, loadAllStats, loadDayStats, saveDayStats } from '@/lib/storage';
 import type { DayStats, PuzzleResult } from '@/lib/types';
-import { setSoundEnabled } from '@/lib/sound';
 
 const HomeView = dynamic(() => import('@/components/HomeView'), { ssr: false });
 const PuzzleMode = dynamic(() => import('@/components/PuzzleMode'), { ssr: false });
@@ -34,11 +33,6 @@ export default function App() {
   const [visited, setVisited] = useState<Set<Tab>>(() => new Set());
   const [analyzeState, setAnalyzeState] = useState<{ fen: string; moves: string[]; playerColor?: 'w' | 'b' } | null>(null);
   const [playState, setPlayState] = useState<{ fen?: string; color?: 'w' | 'b' } | null>(null);
-
-  // Keep the sound module in sync with the user's setting.
-  useEffect(() => {
-    setSoundEnabled(settings.soundEnabled);
-  }, [settings.soundEnabled]);
 
   const handleSettingsChange = (s: AppSettings) => {
     setSettings(s);
