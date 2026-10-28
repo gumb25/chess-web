@@ -5,7 +5,6 @@ import { Chess, Square } from 'chess.js';
 import ChessBoard from './ChessBoard';
 import { AppSettings } from '@/lib/types';
 import { useEngineAnalysis, evalBar } from '@/hooks/useEngineAnalysis';
-import { playMoveSound } from '@/lib/sound';
 
 interface Props {
   settings: AppSettings;
@@ -67,7 +66,6 @@ export default function AnalyzeMode({ settings, initialFen, initialMoves, initia
     let result;
     try { result = c.move({ from, to, promotion }); } catch { return false; }
     if (!result) return false;
-    playMoveSound(result);
 
     setHistory(h => [...h, { chess, lastMove }]);
     setChess(c);

@@ -5,7 +5,6 @@ import { Chess, Square } from 'chess.js';
 import ChessBoard from './ChessBoard';
 import { AppSettings } from '@/lib/types';
 import { useEngineAnalysis, evalBar } from '@/hooks/useEngineAnalysis';
-import { playMoveSound } from '@/lib/sound';
 
 interface OpeningInfo {
   eco: string;
@@ -100,7 +99,6 @@ export default function OpeningMode({ settings }: Props) {
     const c = new Chess(chess.fen());
     const result = c.move({ from, to, promotion });
     if (!result) return false;
-    playMoveSound(result);
     playSan(result.san, c.fen());
     return true;
   }, [chess, playSan]);
@@ -113,7 +111,6 @@ export default function OpeningMode({ settings }: Props) {
       promotion: move.uci[4] as string | undefined,
     });
     if (!result) return;
-    playMoveSound(result);
     playSan(result.san, c.fen());
   };
 

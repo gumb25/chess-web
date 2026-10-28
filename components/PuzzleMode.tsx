@@ -5,7 +5,6 @@ import { Chess, Square } from 'chess.js';
 import ChessBoard from './ChessBoard';
 import { Puzzle, AppSettings, DayStats } from '@/lib/types';
 import { saveResult } from '@/lib/storage';
-import { playSound } from '@/lib/sound';
 
 interface Props {
   settings: AppSettings;
@@ -122,8 +121,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
     }
 
     const c = new Chess(chess.fen());
-    const playerResult = c.move({ from, to, promotion: promotion ?? (expected[4] as string | undefined) });
-    playSound(playerResult && (playerResult.captured || playerResult.flags.includes('e')) ? 'capture' : 'move');
+    c.move({ from, to, promotion: promotion ?? (expected[4] as string | undefined) });
     setLastMove({ from, to });
     setHintSquare(null);
     setHintDestSquare(null);
@@ -147,8 +145,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
       const c2 = new Chess(c.fen());
       const oFrom = opponentMove.slice(0, 2) as Square;
       const oTo = opponentMove.slice(2, 4) as Square;
-      const oppResult = c2.move({ from: oFrom, to: oTo, promotion: opponentMove[4] });
-      playSound(oppResult && (oppResult.captured || oppResult.flags.includes('e')) ? 'capture' : 'move');
+      c2.move({ from: oFrom, to: oTo, promotion: opponentMove[4] });
       setLastMove({ from: oFrom, to: oTo });
       setChess(c2);
       setMoveIndex(nextIndex + 1);
@@ -195,13 +192,13 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
     // Precompute each frame of the remaining solution, starting from the
     // current position (the move the user missed).
     const c = new Chess(chess.fen());
-    const frames: { fen: string; from: Square; to: Square; mate: boolean; capture: boolean }[] = [];
+    const frames: { fen: string; from: Square; to: Square; mate: boolean }[] = [];
     for (const uci of puzzle.moves.slice(moveIndex)) {
       const from = uci.slice(0, 2) as Square;
       const to = uci.slice(2, 4) as Square;
       const result = c.move({ from, to, promotion: uci[4] });
       if (!result) break;
-      frames.push({ fen: c.fen(), from, to, mate: c.isCheckmate(), capture: !!result.captured || result.flags.includes('e') });
+      frames.push({ fen: c.fen(), from, to, mate: c.isCheckmate() });
     }
 
     // Play them out on the board one at a time, slow enough to follow.
@@ -211,7 +208,6 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
       const t = setTimeout(() => {
         setChess(new Chess(f.fen));
         setLastMove({ from: f.from, to: f.to });
-        playSound(f.capture ? 'capture' : 'move');
         if (f.mate) setCheckmateMsg('Checkmate!');
         if (i === frames.length - 1) setShowSolution(false);
       }, STEP_MS * (i + 1));

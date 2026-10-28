@@ -5,7 +5,6 @@ import { Chess, Square } from 'chess.js';
 import ChessBoard from './ChessBoard';
 import { AppSettings } from '@/lib/types';
 import { useStockfish } from '@/hooks/useStockfish';
-import { playMoveSound } from '@/lib/sound';
 
 interface Props {
   settings: AppSettings;
@@ -61,8 +60,7 @@ export default function PlayMode({ settings, initialFen, initialColor, onSetting
       const to = result.bestMove.slice(2, 4) as Square;
       const promo = result.bestMove[4] as string | undefined;
       const c2 = new Chess(c.fen());
-      const engineResult = c2.move({ from, to, promotion: promo });
-      if (engineResult) playMoveSound(engineResult);
+      c2.move({ from, to, promotion: promo });
       setChess(c2);
       setLastMove({ from, to });
       const over = checkGameOver(c2);
@@ -106,7 +104,6 @@ export default function PlayMode({ settings, initialFen, initialColor, onSetting
     const c = new Chess(chess.fen());
     const result = c.move({ from, to, promotion });
     if (!result) return false;
-    playMoveSound(result);
 
     setHistory(h => [...h, { chess, lastMove }]);
     setChess(c);
