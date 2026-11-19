@@ -5,6 +5,8 @@ import { Chess, Square } from 'chess.js';
 import ChessBoard from './ChessBoard';
 import { AppSettings } from '@/lib/types';
 import { useEngineAnalysis, evalBar } from '@/hooks/useEngineAnalysis';
+import { BoardLayout, Panel, EvalBar, MoveList, useArrowKeys } from './ui';
+import { FlipIcon, ResetIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, PlayIcon, BookIcon } from './Icons';
 
 interface OpeningInfo {
   eco: string;
@@ -24,6 +26,8 @@ interface OpeningDB {
 
 interface Props {
   settings: AppSettings;
+  active?: boolean;
+  onPlayFromHere?: (fen: string, color: 'w' | 'b') => void;
 }
 
 function normalEpd(fen: string) {
@@ -42,7 +46,7 @@ function positionAt(sans: string[], ply: number): { chess: Chess; lastMove: { fr
   return { chess, lastMove };
 }
 
-export default function OpeningMode({ settings }: Props) {
+export default function OpeningMode({ settings, active = true, onPlayFromHere }: Props) {
   const [db, setDb] = useState<OpeningDB | null>(null);
   const [dbError, setDbError] = useState(false);
   const [moveHistory, setMoveHistory] = useState<string[]>([]);
@@ -124,189 +128,143 @@ export default function OpeningMode({ settings }: Props) {
   };
 
   const opening: OpeningInfo | null = db?.positions[epd] ?? null;
-  const topMoves: MoveEntry[] = db?.moves[epd]?.slice(0, 3) ?? [];
+  const topMoves: MoveEntry[] = db?.moves[epd]?.slice(0, 5) ?? [];
   const loading = db === null && !dbError;
 
-  const { whiteAdvantage, label: evalLabel } = evalBar(evalScore);
+  const { label: evalLabel } = evalBar(evalScore);
 
-  return (
-    <div className="flex flex-col items-center gap-2 py-2 px-3">
+  useArrowKeys(active, {
+    left: handleBack,
+    right: handleForward,
+    up: () => setCurrentPly(0),
+    down: () => setCurrentPly(moveHistory.length),
+  });
 
-      {/* Opening name card — fixed height; text shrinks for long names */}
-      <div className="w-full max-w-[480px] bg-white border border-gray-200 rounded-2xl px-4 py-3">
-        <div className="h-8 flex items-center">
-          {loading ? (
-            <div className="text-sm text-gray-400">Loading opening database…</div>
-          ) : dbError ? (
-            <div className="text-sm text-red-500">Couldn&apos;t load the opening database.</div>
-          ) : opening ? (
-            <button
-              onClick={() => setShowNameModal(true)}
-              className="flex items-center gap-2 min-w-0 w-full text-left"
-              title="Tap for full name"
-            >
-              <span className="text-[11px] font-mono bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded shrink-0">
-                {opening.eco}
-              </span>
-              <span
-                className={`font-semibold text-gray-800 truncate ${
-                  opening.name.length > 44 ? 'text-xs'
-                    : opening.name.length > 30 ? 'text-sm'
-                    : 'text-base'
-                }`}
-              >
-                {opening.name}
-              </span>
-            </button>
-          ) : (
-            <div className="text-sm text-gray-400">
-              {currentPly === 0 ? 'Make a move to explore openings' : 'Out of opening theory'}
-            </div>
-          )}
+  const boardCol = (
+    <div className="flex gap-2 sm:gap-3 items-stretch">
+      <EvalBar evalScore={evalScore} flipped={flipped} ready={isReady}/>
+      <div className="flex-1 min-w-0">
+        <ChessBoard
+          chess={chess}
+          flipped={flipped}
+          theme={settings.boardTheme}
+          onMove={handleMove}
+          lastMove={lastMove}
+          arrows={arrows}
+        />
+      </div>
+    </div>
+  );
+
+  const navBtn = (onClick: () => void, disabled: boolean, label: string, icon: React.ReactNode) => (
+    <button onClick={onClick} disabled={disabled} aria-label={label} title={label} className="btn btn-secondary flex-1 px-0">
+      {icon}
+    </button>
+  );
+
+  const panel = (
+    <>
+      {/* Opening name */}
+      <section className="card p-4">
+        <div className="flex items-start gap-3">
+          <span className="w-10 h-10 rounded-xl bg-info-soft text-info flex items-center justify-center shrink-0"><BookIcon/></span>
+          <div className="min-w-0 flex-1">
+            {loading ? (
+              <div className="text-sm text-muted pt-2.5">Loading opening database…</div>
+            ) : dbError ? (
+              <div className="text-sm text-danger pt-2.5">Couldn&apos;t load the opening database.</div>
+            ) : opening ? (
+              <button onClick={() => setShowNameModal(true)} className="text-left w-full" title="Tap for full name">
+                <span className="text-[11px] font-mono font-semibold bg-surface-2 text-muted px-1.5 py-0.5 rounded">{opening.eco}</span>
+                <span className="block font-bold text-fg leading-snug mt-1 line-clamp-2">{opening.name}</span>
+              </button>
+            ) : (
+              <div className="pt-0.5">
+                <div className="font-bold text-fg">{currentPly === 0 ? 'Starting position' : 'Out of book'}</div>
+                <div className="text-sm text-muted">{currentPly === 0 ? 'Make a move or pick one below.' : 'This position isn’t in the opening database.'}</div>
+              </div>
+            )}
+          </div>
+          <div className="text-right shrink-0">
+            <div className="text-sm font-bold tabular-nums text-fg">{isReady ? evalLabel : '…'}</div>
+            <div className="text-[11px] text-subtle">{isAnalyzing ? 'thinking' : 'eval'}</div>
+          </div>
         </div>
-
         {transposition && (
-          <div className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
-            ↔ Transposition — {transposition}
+          <div className="mt-3 text-xs text-accent-soft-fg bg-accent-soft rounded-lg px-2.5 py-1.5">
+            ↔ Transposition. {transposition}
           </div>
         )}
-      </div>
-
-      {/* Evaluation bar */}
-      <div className="w-full max-w-[480px] flex items-center gap-2">
-        <span className="text-xs text-gray-500 w-10 text-right">
-          {isReady ? evalLabel : '…'}
-        </span>
-        <div className="flex-1 h-4 rounded-full overflow-hidden flex border border-gray-200">
-          <div style={{ width: `${whiteAdvantage}%`, background: '#ffffff', flexShrink: 0, transition: 'width 300ms' }}/>
-          <div style={{ flex: 1, background: '#000000' }}/>
-        </div>
-        {isAnalyzing && <span className="text-xs text-gray-300">⚙</span>}
-      </div>
-
-      {/* Board */}
-      <ChessBoard
-        chess={chess}
-        flipped={flipped}
-        theme={settings.boardTheme}
-        onMove={handleMove}
-        lastMove={lastMove}
-        arrows={arrows}
-      />
-
-      {/* Move breadcrumb — click any move to jump to that position */}
-      {moveHistory.length > 0 && (
-        <div className="w-full max-w-[480px] flex flex-wrap items-center gap-x-1 gap-y-1 px-1 text-xs">
-          {moveHistory.map((san, i) => (
-            <React.Fragment key={i}>
-              {i % 2 === 0 && (
-                <span className="text-gray-300 ml-1 first:ml-0">{Math.floor(i / 2) + 1}.</span>
-              )}
-              <button
-                onClick={() => setCurrentPly(i + 1)}
-                className={`px-1 py-0.5 rounded font-medium transition-colors ${
-                  currentPly === i + 1
-                    ? 'bg-gray-800 text-white'
-                    : 'text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {san}
-              </button>
-            </React.Fragment>
-          ))}
-        </div>
-      )}
+      </section>
 
       {/* Popular continuations */}
-      <div className="w-full max-w-[480px] bg-white border border-gray-200 rounded-2xl overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-gray-100">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-            Popular Continuations
-          </span>
-        </div>
-
+      <Panel title="Popular replies">
         {topMoves.length === 0 ? (
-          <div className="px-4 py-4 text-sm text-gray-400">
-            {loading ? 'Loading…' : dbError ? 'Unavailable' : 'End of opening theory'}
+          <div className="px-4 pb-4 text-sm text-subtle">
+            {loading ? 'Loading…' : dbError ? 'Unavailable' : 'No more book moves from here.'}
           </div>
         ) : (
-          <div className="divide-y divide-gray-50">
-            {topMoves.map(move => (
+          <div className="px-2 pb-2 flex flex-col">
+            {topMoves.map((move, i) => (
               <button
                 key={move.uci}
                 onClick={() => handleContinuation(move)}
-                className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left"
+                className="w-full px-2 py-2.5 rounded-lg flex items-center gap-3 hover:bg-surface-2 active:bg-surface-3 transition-colors text-left group"
               >
-                <span className="text-base font-bold text-gray-800 w-10 shrink-0">{move.san}</span>
-                <span className="text-sm text-gray-400 truncate">
-                  {move.continuationName ?? '—'}
+                <span className={`min-w-12 h-8 px-2 rounded-lg flex items-center justify-center text-sm font-bold ${i === 0 ? 'bg-accent text-accent-fg' : 'bg-surface-2 text-fg'}`}>
+                  {move.san}
                 </span>
-                <span className="ml-auto text-gray-200 text-lg shrink-0">›</span>
+                <span className="text-sm text-muted truncate flex-1">{move.continuationName ?? 'Main line'}</span>
+                <span className="text-subtle group-hover:text-fg transition-colors"><ChevronRightIcon size={16}/></span>
               </button>
             ))}
           </div>
         )}
+      </Panel>
+
+      <div className="flex gap-2">
+        {navBtn(() => setCurrentPly(0), currentPly === 0, 'Start', <ChevronsLeftIcon size={18}/>)}
+        {navBtn(handleBack, currentPly === 0, 'Back', <ChevronLeftIcon size={18}/>)}
+        {navBtn(handleForward, currentPly >= moveHistory.length, 'Forward', <ChevronRightIcon size={18}/>)}
+        {navBtn(() => setCurrentPly(moveHistory.length), currentPly >= moveHistory.length, 'End', <ChevronsRightIcon size={18}/>)}
+        <button onClick={() => setFlipped(f => !f)} aria-label="Flip board" title="Flip board" className="btn btn-ghost btn-icon h-11 w-11">
+          <FlipIcon size={18}/>
+        </button>
       </div>
 
-      {/* Controls */}
-      <div className="flex gap-2 w-full max-w-[480px]">
-        <button
-          onClick={handleBack}
-          disabled={currentPly === 0}
-          className="flex-1 bg-white border border-gray-200 text-gray-600 rounded-xl py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-30 transition-colors"
-        >
-          ← Back
+      <Panel
+        title="Your line"
+        action={moveHistory.length > 0 && (
+          <button onClick={handleReset} className="btn btn-ghost h-8 min-h-0 px-2 -mr-2 text-xs"><ResetIcon size={14}/> Reset</button>
+        )}
+      >
+        <MoveList sans={moveHistory} ply={currentPly} onSelect={setCurrentPly} empty="Your moves will appear here."/>
+      </Panel>
+
+      {onPlayFromHere && currentPly > 0 && (
+        <button onClick={() => onPlayFromHere(fen, chess.turn())} className="btn btn-secondary h-11">
+          <PlayIcon size={16}/> Play this position vs computer
         </button>
-        <button
-          onClick={handleForward}
-          disabled={currentPly >= moveHistory.length}
-          className="flex-1 bg-white border border-gray-200 text-gray-600 rounded-xl py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-30 transition-colors"
-        >
-          Forward →
-        </button>
-        <button
-          onClick={() => setFlipped(f => !f)}
-          className="bg-white border border-gray-200 text-gray-400 rounded-xl py-2 px-4 text-sm hover:bg-gray-50 transition-colors"
-        >
-          Flip
-        </button>
-        <button
-          onClick={handleReset}
-          disabled={moveHistory.length === 0}
-          className="flex-1 bg-white border border-gray-200 text-gray-600 rounded-xl py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-30 transition-colors"
-        >
-          Reset
-        </button>
-      </div>
+      )}
 
       {/* Full opening name popup */}
       {showNameModal && opening && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-6"
           onClick={() => setShowNameModal(false)}
         >
-          <div
-            className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-xl"
-            onClick={e => e.stopPropagation()}
-          >
+          <div className="card animate-pop p-5 max-w-sm w-full" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-[11px] font-mono bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">
-                {opening.eco}
-              </span>
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Opening</span>
+              <span className="text-[11px] font-mono font-semibold bg-surface-2 text-muted px-1.5 py-0.5 rounded">{opening.eco}</span>
+              <span className="eyebrow">Opening</span>
             </div>
-            <div className="text-lg font-bold text-gray-900 leading-snug">
-              {opening.name}
-            </div>
-            <button
-              onClick={() => setShowNameModal(false)}
-              className="mt-4 w-full bg-gray-800 hover:bg-gray-900 text-white rounded-xl py-2 text-sm font-medium transition-colors"
-            >
-              Close
-            </button>
+            <div className="text-lg font-bold text-fg leading-snug">{opening.name}</div>
+            <button onClick={() => setShowNameModal(false)} className="btn btn-primary w-full mt-5">Close</button>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
+
+  return <BoardLayout board={boardCol} panel={panel}/>;
 }

@@ -3,7 +3,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Chess, Square } from 'chess.js';
 import ChessBoard from './ChessBoard';
-import { Puzzle, AppSettings, DayStats } from '@/lib/types';
+import { Puzzle, AppSettings, DayStats, themeLabel } from '@/lib/types';
+import { BoardLayout, Panel, Status, Stat } from './ui';
+import { BulbIcon, EyeIcon, FlipIcon, RetryIcon, ArrowRightIcon, CheckIcon, XIcon, MicroscopeIcon, FilterIcon, TargetIcon, FlameIcon } from './Icons';
 import { saveResult } from '@/lib/storage';
 
 interface Props {
@@ -11,11 +13,12 @@ interface Props {
   dayStats: DayStats;
   onDayStatsChange: (s: DayStats) => void;
   onAnalyze?: (fen: string, moves: string[], playerColor: 'w' | 'b') => void;
+  onOpenSettings?: () => void;
 }
 
 type PuzzleState = 'solving' | 'correct' | 'failed' | 'complete';
 
-export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAnalyze }: Props) {
+export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAnalyze, onOpenSettings }: Props) {
   const [puzzles, setPuzzles] = useState<Puzzle[]>([]);
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [chess, setChess] = useState<Chess>(new Chess());
@@ -30,6 +33,10 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
   const [checkmateMsg, setCheckmateMsg] = useState<string | null>(null);
   const [playerColor, setPlayerColor] = useState<'w' | 'b'>('w');
   const [loadError, setLoadError] = useState(false);
+  const [errorSquare, setErrorSquare] = useState<Square | null>(null);
+  // Consecutive clean solves this session.
+  const [streak, setStreak] = useState(0);
+  const [solvedClean, setSolvedClean] = useState(false);
   const usedHintRef = useRef(false);
   const scoredRef = useRef(false);
   const solutionTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -48,6 +55,8 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
     if (!puzzle || scoredRef.current) return;
     scoredRef.current = true;
     const success = solved && !usedHintRef.current;
+    setSolvedClean(success);
+    setStreak(n => success ? n + 1 : 0);
     // Save the result first: the parent reloads all-time stats on change.
     saveResult({ puzzleId: puzzle.id, solved: success, usedHint: usedHintRef.current });
     // Start a fresh tally if the app was left open past midnight.
@@ -88,6 +97,8 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
     setLastMove({ from, to });
     setShowSolution(false);
     setCheckmateMsg(null);
+    setErrorSquare(null);
+    setSolvedClean(false);
     usedHintRef.current = false;
     scoredRef.current = false;
     setFlipped(c.turn() === 'b');
@@ -115,6 +126,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
     const uciNorm = uci.length === 5 ? uci : uci.slice(0, 4);
 
     if (uciNorm !== expectedNorm) {
+      setErrorSquare(to);
       setState('failed');
       recordResult(false);
       return false;
@@ -187,6 +199,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
     setState('complete');
     setHintSquare(null);
     setHintDestSquare(null);
+    setErrorSquare(null);
     setShowSolution(true);
 
     // Precompute each frame of the remaining solution, starting from the
@@ -227,6 +240,7 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
     setHintDestSquare(null);
     setShowSolution(false);
     setCheckmateMsg(null);
+    setErrorSquare(null);
   };
 
   const handleNextPuzzle = () => {
@@ -236,32 +250,50 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
 
   if (!puzzle) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className={`text-lg ${loadError ? 'text-red-500' : 'text-gray-500'}`}>
-          {loadError ? "Couldn't load puzzles." : 'Loading puzzles…'}
+      <div className="flex items-center justify-center h-[60vh]">
+        <div className={`flex items-center gap-3 ${loadError ? 'text-danger' : 'text-muted'}`}>
+          {!loadError && <span className="w-5 h-5 rounded-full border-2 border-line-strong border-t-accent animate-spin"/>}
+          {loadError ? "Couldn't load puzzles. Check your connection and refresh." : 'Loading puzzles…'}
         </div>
       </div>
     );
   }
 
-  const turnLabel = chess.turn() === 'w' ? 'White' : 'Black';
-  const statusMsg = state === 'solving'
-    ? `${turnLabel} to move`
-    : state === 'correct' ? 'Correct!' : state === 'failed' ? 'Incorrect' : 'Puzzle Complete!';
-  const statusColor = state === 'solving' ? 'text-gray-700' : state === 'complete' ? 'text-green-600' : state === 'failed' ? 'text-red-500' : 'text-green-600';
+  const sideName = playerColor === 'w' ? 'White' : 'Black';
+  const accuracy = dayStats.played > 0 ? Math.round((dayStats.correct / dayStats.played) * 100) : null;
+  const ratingRange = `${settings.minRating}–${settings.maxRating}`;
+  const filtered = settings.puzzleThemes.length > 0;
 
-  return (
-    <div className="flex flex-col items-center gap-2 py-2 px-3">
-      <div className="flex items-center justify-between w-full max-w-[480px] px-1">
-        <div>
-          <div className={`text-lg font-semibold ${statusColor}`}>{statusMsg}</div>
-          <div className="text-xs text-gray-400">Rating: {puzzle.rating}</div>
+  let status: React.ReactNode;
+  if (showSolution) {
+    status = <Status tone="info" icon={<EyeIcon/>} title="Playing the solution">Watch the board.</Status>;
+  } else if (state === 'failed') {
+    status = <Status tone="danger" icon={<XIcon/>} title="Not quite">That isn’t the best move. Try again or see the solution.</Status>;
+  } else if (state === 'complete') {
+    status = solvedClean
+      ? <Status tone="success" icon={<CheckIcon/>} title={checkmateMsg ?? 'Solved!'}>{streak > 1 ? `${streak} in a row. Keep it going.` : 'Nicely done.'}</Status>
+      : <Status tone="neutral" icon={<CheckIcon/>} title={checkmateMsg ?? 'Puzzle complete'}>Counted as a miss this time. On to the next one.</Status>;
+  } else if (opponentReplying) {
+    status = <Status tone="success" icon={<CheckIcon/>} title="Good move!">Keep going…</Status>;
+  } else {
+    status = (
+      <Status tone="accent" icon={<span className={`w-5 h-5 rounded-full border-2 ${playerColor === 'w' ? 'bg-white border-[#999]' : 'bg-[#222] border-[#222]'}`}/>} title="Your turn">
+        Find the best move for {sideName}.
+      </Status>
+    );
+  }
+
+  const boardCol = (
+    <>
+      <div className="flex items-center justify-between px-1 h-9">
+        <div className="flex items-center gap-2">
+          <span className="chip font-semibold"><TargetIcon size={14}/> {puzzle.rating}</span>
+          {hintLevel > 0 && state === 'solving' && <span className="chip bg-accent-soft text-accent-soft-fg">Hint {hintLevel}/2</span>}
         </div>
-        <button onClick={() => setFlipped(f => !f)} className="text-gray-400 hover:text-gray-600 transition-colors text-sm px-2 py-1 rounded border border-gray-200">
-          Flip
+        <button onClick={() => setFlipped(f => !f)} className="btn btn-ghost btn-icon" aria-label="Flip board" title="Flip board">
+          <FlipIcon size={18}/>
         </button>
       </div>
-
       <ChessBoard
         chess={chess}
         flipped={flipped}
@@ -271,82 +303,87 @@ export default function PuzzleMode({ settings, dayStats, onDayStatsChange, onAna
         hintSquare={hintSquare}
         hintDestSquare={hintDestSquare}
         lastMove={lastMove}
+        errorSquare={state === 'failed' ? errorSquare : null}
       />
+    </>
+  );
 
-      {checkmateMsg && (
-        <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-green-700 font-medium text-center max-w-[480px] w-full">
-          {checkmateMsg}
-        </div>
-      )}
+  const panel = (
+    <>
+      {status}
 
-      {showSolution && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 max-w-[480px] w-full text-center text-sm font-medium text-blue-700">
-          Playing solution — watch the board
-        </div>
-      )}
-
-      <div className="flex gap-2 flex-wrap justify-center max-w-[480px] w-full">
+      <div className="grid grid-cols-2 gap-2">
         {state === 'solving' && (
           <>
-            <button onClick={handleHint} disabled={opponentReplying} className="disabled:opacity-40 flex-1 min-w-[80px] bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 rounded-xl py-2 px-4 text-sm font-medium transition-colors">
-              Hint {hintLevel > 0 ? `(${hintLevel}/2)` : ''}
+            <button onClick={handleHint} disabled={opponentReplying || hintLevel >= 2} className="btn btn-soft h-12">
+              <BulbIcon size={18}/> {hintLevel === 0 ? 'Hint' : hintLevel === 1 ? 'Show target' : 'Hint shown'}
             </button>
-            <button onClick={handleShowSolution} disabled={opponentReplying} className="disabled:opacity-40 flex-1 min-w-[80px] bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-600 rounded-xl py-2 px-4 text-sm font-medium transition-colors">
-              Solution
+            <button onClick={handleShowSolution} disabled={opponentReplying} className="btn btn-secondary h-12">
+              <EyeIcon size={18}/> Solution
             </button>
           </>
         )}
         {state === 'failed' && (
           <>
-            <button onClick={handleRetry} className="flex-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-xl py-2 px-4 text-sm font-medium transition-colors">
-              Retry
+            <button onClick={handleRetry} className="btn btn-primary h-12">
+              <RetryIcon size={18}/> Try again
             </button>
-            <button onClick={handleShowSolution} className="flex-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-600 rounded-xl py-2 px-4 text-sm font-medium transition-colors">
-              Solution
+            <button onClick={handleShowSolution} className="btn btn-secondary h-12">
+              <EyeIcon size={18}/> Solution
             </button>
           </>
         )}
-        {(state === 'complete') && (
+        {state === 'complete' && (
           <>
-            <button onClick={handleNextPuzzle} className="flex-1 bg-green-600 hover:bg-green-700 text-white rounded-xl py-2 px-4 text-sm font-medium transition-colors">
-              Next Puzzle
+            <button onClick={handleNextPuzzle} disabled={showSolution} className="btn btn-primary h-12 col-span-2 text-base">
+              Next puzzle <ArrowRightIcon size={18}/>
             </button>
-            <button onClick={() => onAnalyze?.(puzzle.fen, puzzle.moves, flipped ? 'b' : 'w')} className="flex-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-600 rounded-xl py-2 px-4 text-sm font-medium transition-colors">
-              Analyze
+            <button
+              onClick={() => onAnalyze?.(puzzle.fen, puzzle.moves, flipped ? 'b' : 'w')}
+              disabled={showSolution}
+              className="btn btn-secondary col-span-2"
+            >
+              <MicroscopeIcon size={18}/> Analyze this position
             </button>
           </>
         )}
       </div>
 
-      <div className="max-w-[480px] w-full bg-white border border-gray-200 rounded-2xl p-4">
-        <div className="grid grid-cols-3 gap-3 text-center mb-3">
-          <div>
-            <div className="text-2xl font-bold text-green-600">{dayStats.correct}</div>
-            <div className="text-xs text-gray-400 mt-0.5">Correct</div>
+      {state === 'complete' && !showSolution && puzzle.themes.length > 0 && (
+        <Panel title="Themes">
+          <div className="px-4 pb-4 flex flex-wrap gap-1.5">
+            {puzzle.themes.map(t => <span key={t} className="chip">{themeLabel(t)}</span>)}
           </div>
-          <div>
-            <div className="text-2xl font-bold text-red-500">{dayStats.incorrect}</div>
-            <div className="text-xs text-gray-400 mt-0.5">Incorrect</div>
+        </Panel>
+      )}
+
+      <Panel
+        title="Today"
+        action={streak > 0 ? <span className="chip bg-accent-soft text-accent-soft-fg font-semibold"><FlameIcon size={14}/> {streak} streak</span> : null}
+      >
+        <div className="px-4 pb-4">
+          <div className="grid grid-cols-3 gap-2">
+            <Stat label="Solved" value={dayStats.correct} tone="success"/>
+            <Stat label="Missed" value={dayStats.incorrect} tone="danger"/>
+            <Stat label="Accuracy" value={accuracy === null ? '–' : `${accuracy}%`}/>
           </div>
-          <div>
-            <div className="text-2xl font-bold text-gray-600">{dayStats.played}</div>
-            <div className="text-xs text-gray-400 mt-0.5">Played</div>
-          </div>
-        </div>
-        {dayStats.played > 0 && (
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-2 bg-red-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-green-500 rounded-full transition-all"
-                style={{ width: `${(dayStats.correct / dayStats.played) * 100}%` }}
-              />
+          {dayStats.played > 0 && (
+            <div className="mt-3 h-1.5 rounded-full bg-danger-soft overflow-hidden">
+              <div className="h-full bg-success rounded-full transition-all" style={{ width: `${(dayStats.correct / dayStats.played) * 100}%` }}/>
             </div>
-            <span className="text-xs font-semibold text-gray-500 w-9 text-right">
-              {Math.round((dayStats.correct / dayStats.played) * 100)}%
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
+          )}
+        </div>
+      </Panel>
+
+      <button onClick={onOpenSettings} className="card px-4 py-3 flex items-center gap-3 text-left hover:border-line-strong transition-colors">
+        <span className="w-9 h-9 rounded-lg bg-surface-2 text-muted flex items-center justify-center"><FilterIcon size={18}/></span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-sm font-semibold text-fg">Difficulty {ratingRange}</span>
+          <span className="block text-xs text-subtle truncate">{filtered ? `${settings.puzzleThemes.length} puzzle types selected` : 'All puzzle types'} · Change</span>
+        </span>
+      </button>
+    </>
   );
+
+  return <BoardLayout board={boardCol} panel={panel}/>;
 }

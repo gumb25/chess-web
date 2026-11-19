@@ -1,91 +1,106 @@
 'use client';
 
-import React from 'react';
-import type { DayStats } from '@/lib/types';
+import React, { useMemo } from 'react';
+import { Chess } from 'chess.js';
+import ChessBoard from './ChessBoard';
+import type { DayStats, PuzzleResult, Tab } from '@/lib/types';
+import { TargetIcon, SwordsIcon, BookIcon, MicroscopeIcon, ArrowRightIcon, ChevronRightIcon } from './Icons';
 
 interface Props {
   dayStats: DayStats;
-  onPuzzle: () => void;
-  onPlay: () => void;
-  onLearn: () => void;
+  allStats: PuzzleResult[];
+  onNavigate: (t: Tab) => void;
 }
 
-export default function HomeView({ dayStats, onPuzzle, onPlay, onLearn }: Props) {
-  const accuracy = dayStats.played > 0
-    ? Math.round((dayStats.correct / dayStats.played) * 100)
-    : null;
+const MODES: { id: Tab; title: string; text: string; Icon: (p: { size?: number }) => React.ReactNode; tint: string }[] = [
+  { id: 'puzzle',   title: 'Puzzles',  text: 'Find the winning move in real game positions.', Icon: TargetIcon,     tint: 'bg-accent-soft text-accent-soft-fg' },
+  { id: 'play',     title: 'Play',     text: 'Take on Stockfish at any strength, with hints.', Icon: SwordsIcon,     tint: 'bg-success-soft text-success' },
+  { id: 'openings', title: 'Openings', text: 'Explore named openings and popular replies.',     Icon: BookIcon,       tint: 'bg-info-soft text-info' },
+  { id: 'analyze',  title: 'Analysis', text: 'Set up any position and see the engine’s view.',  Icon: MicroscopeIcon, tint: 'bg-surface-2 text-fg' },
+];
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+}
+
+export default function HomeView({ dayStats, allStats, onNavigate }: Props) {
+  // A static Italian Game position decorates the hero.
+  const heroBoard = useMemo(() => new Chess('r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4'), []);
+  const accuracy = dayStats.played > 0 ? Math.round((dayStats.correct / dayStats.played) * 100) : null;
+  const solvedAllTime = allStats.filter(r => r.solved).length;
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#f8f8f7]">
-      {/* Hero */}
-      <div className="flex flex-col items-center px-6 pt-10 pb-8 gap-8">
-        <div className="text-center">
-          <div className="text-6xl mb-3 select-none">♔</div>
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Chess</h1>
-          <p className="text-gray-400 mt-1.5 text-base">Train. Play. Improve.</p>
-        </div>
-
-        {/* Action cards */}
-        <div className="w-full max-w-sm flex flex-col gap-4">
-          <button
-            onClick={onPuzzle}
-            className="w-full bg-white border border-gray-200 rounded-2xl px-6 py-5 flex items-center gap-5 shadow-sm hover:shadow-md hover:border-gray-300 active:scale-[0.98] transition-all text-left"
-          >
-            <span className="text-4xl select-none">♟</span>
-            <div>
-              <div className="text-lg font-bold text-gray-900">Solve a Puzzle</div>
-              <div className="text-sm text-gray-400 mt-0.5">Sharpen your tactics</div>
-            </div>
-            <span className="ml-auto text-gray-300 text-xl">›</span>
-          </button>
-
-          <button
-            onClick={onPlay}
-            className="w-full bg-gray-900 rounded-2xl px-6 py-5 flex items-center gap-5 shadow-sm hover:bg-gray-800 active:scale-[0.98] transition-all text-left"
-          >
-            <span className="text-4xl select-none">⚔</span>
-            <div>
-              <div className="text-lg font-bold text-white">Play vs Computer</div>
-              <div className="text-sm text-gray-400 mt-0.5">Challenge Stockfish</div>
-            </div>
-            <span className="ml-auto text-gray-600 text-xl">›</span>
-          </button>
-
-          <button
-            onClick={onLearn}
-            className="w-full bg-white border border-gray-200 rounded-2xl px-6 py-5 flex items-center gap-5 shadow-sm hover:shadow-md hover:border-gray-300 active:scale-[0.98] transition-all text-left"
-          >
-            <span className="text-4xl select-none">📖</span>
-            <div>
-              <div className="text-lg font-bold text-gray-900">Learn Openings</div>
-              <div className="text-sm text-gray-400 mt-0.5">Explore opening theory</div>
-            </div>
-            <span className="ml-auto text-gray-300 text-xl">›</span>
-          </button>
-        </div>
-
-        {/* Today's stats — only shown once user has played */}
-        {dayStats.played > 0 && (
-          <div className="w-full max-w-sm bg-white border border-gray-200 rounded-2xl px-6 py-4 flex items-center justify-between">
-            <div className="text-sm text-gray-500">Today</div>
-            <div className="flex gap-6 text-sm">
-              <span>
-                <span className="font-semibold text-green-600">{dayStats.correct}</span>
-                <span className="text-gray-400 ml-1">correct</span>
-              </span>
-              <span>
-                <span className="font-semibold text-red-500">{dayStats.incorrect}</span>
-                <span className="text-gray-400 ml-1">wrong</span>
-              </span>
-              {accuracy !== null && (
-                <span>
-                  <span className="font-semibold text-gray-700">{accuracy}%</span>
-                </span>
-              )}
-            </div>
-          </div>
-        )}
+    <div className="mx-auto w-full max-w-[1100px] px-4 sm:px-6 py-6 lg:py-10 flex flex-col gap-6 lg:gap-8 animate-fade-up">
+      <div>
+        <p className="text-sm font-semibold text-accent">{greeting()}</p>
+        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-fg mt-1">Ready for some chess?</h1>
       </div>
+
+      {/* Hero */}
+      <section className="card p-5 sm:p-8 flex flex-col md:flex-row md:items-center gap-6 md:gap-10 overflow-hidden relative">
+        <div className="flex-1 min-w-0 relative z-10">
+          <span className="eyebrow">Daily training</span>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-fg mt-2 leading-tight">
+            Sharpen your tactics,<br className="hidden sm:block"/> one puzzle at a time
+          </h2>
+          <p className="text-muted mt-3 max-w-md">
+            Thousands of rated puzzles from real games. Get it wrong? Retry the exact move or watch the solution play out.
+          </p>
+          <div className="flex flex-wrap gap-2 mt-6">
+            <button onClick={() => onNavigate('puzzle')} className="btn btn-primary px-5 h-12 text-base">
+              Start solving <ArrowRightIcon size={18}/>
+            </button>
+            <button onClick={() => onNavigate('play')} className="btn btn-secondary px-5 h-12 text-base">
+              Play the computer
+            </button>
+          </div>
+        </div>
+        <div className="hidden sm:block w-full max-w-[280px] mx-auto md:mx-0 shrink-0 pointer-events-none rotate-[-2deg]" aria-hidden="true">
+          <ChessBoard chess={heroBoard} disabled lastMove={{ from: 'f1', to: 'c4' }}/>
+        </div>
+      </section>
+
+      {/* Today */}
+      <section className="card p-4 sm:p-5 flex items-center gap-4 sm:gap-8 flex-wrap">
+        <div className="flex-1 min-w-[140px]">
+          <div className="eyebrow">Today</div>
+          <div className="text-sm text-muted mt-1">
+            {dayStats.played === 0 ? 'No puzzles yet today. A few minutes keeps you sharp.' : `${dayStats.played} puzzle${dayStats.played === 1 ? '' : 's'} played`}
+          </div>
+        </div>
+        <div className="flex gap-6 sm:gap-10">
+          <div><div className="text-2xl font-bold tabular-nums text-success">{dayStats.correct}</div><div className="text-xs text-subtle">Solved</div></div>
+          <div><div className="text-2xl font-bold tabular-nums text-fg">{accuracy === null ? '–' : `${accuracy}%`}</div><div className="text-xs text-subtle">Accuracy</div></div>
+          <div><div className="text-2xl font-bold tabular-nums text-fg">{solvedAllTime}</div><div className="text-xs text-subtle">All-time</div></div>
+        </div>
+        <button onClick={() => onNavigate('progress')} className="btn btn-ghost -mr-2">
+          Progress <ChevronRightIcon size={16}/>
+        </button>
+      </section>
+
+      {/* Modes */}
+      <section>
+        <h2 className="eyebrow mb-3">Explore</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {MODES.map(m => (
+            <button
+              key={m.id}
+              onClick={() => onNavigate(m.id)}
+              className="card p-4 sm:p-5 text-left flex sm:flex-col items-center sm:items-start gap-4 hover:border-line-strong hover:shadow-[var(--shadow-md)] active:scale-[0.99] transition-all group"
+            >
+              <span className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${m.tint}`}>
+                <m.Icon size={24}/>
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block font-bold text-fg">{m.title}</span>
+                <span className="block text-sm text-muted mt-0.5">{m.text}</span>
+              </span>
+              <span className="sm:hidden text-subtle group-hover:text-fg transition-colors"><ChevronRightIcon/></span>
+            </button>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
