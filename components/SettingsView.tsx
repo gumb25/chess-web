@@ -1,7 +1,28 @@
 'use client';
 
 import React, { useState } from 'react';
-import { AppSettings, ALL_PUZZLE_THEMES, BoardTheme, BOARD_THEMES } from '@/lib/types';
+import { AppSettings, ALL_PUZZLE_THEMES, BoardTheme, BOARD_THEMES, Appearance, themeLabel, skillLabel } from '@/lib/types';
+import { PageHeader, Segmented } from './ui';
+import { SunIcon, MoonIcon, MonitorIcon, CheckIcon, ChevronRightIcon } from './Icons';
+import ChessPiece from './ChessPiece';
+
+const DIFFICULTY_PRESETS = [
+  { label: 'Beginner', min: 400, max: 1200 },
+  { label: 'Intermediate', min: 1000, max: 1800 },
+  { label: 'Advanced', min: 1600, max: 2400 },
+  { label: 'Expert', min: 2000, max: 2800 },
+  { label: 'Any', min: 400, max: 2800 },
+];
+
+function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+  return (
+    <section className="card p-5">
+      <h2 className="font-bold text-fg">{title}</h2>
+      {description && <p className="text-sm text-muted mt-0.5">{description}</p>}
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
 
 interface Props {
   settings: AppSettings;
@@ -36,78 +57,130 @@ export default function SettingsView({ settings, onChange }: Props) {
   };
 
   const themesSummary = noneChecked
-    ? 'None (all puzzles)'
+    ? 'None selected, so all puzzles are used'
     : allSelected
-    ? `All (${ALL_PUZZLE_THEMES.length})`
-    : `${settings.puzzleThemes.length} of ${ALL_PUZZLE_THEMES.length}`;
+    ? `All ${ALL_PUZZLE_THEMES.length} types`
+    : `${settings.puzzleThemes.length} of ${ALL_PUZZLE_THEMES.length} types selected`;
+
+  const preset = DIFFICULTY_PRESETS.find(p => p.min === settings.minRating && p.max === settings.maxRating);
 
   return (
-    <div className="flex flex-col gap-5 py-6 px-4 max-w-md mx-auto">
-      <h2 className="text-2xl font-bold text-gray-800">Settings</h2>
+    <div className="mx-auto w-full max-w-[720px] px-4 sm:px-6 py-6 lg:py-10 animate-fade-up">
+      <PageHeader title="Settings" subtitle="Saved automatically on this device."/>
+      <div className="flex flex-col gap-4">
+        <Section title="Appearance">
+          <Segmented<Appearance>
+            value={settings.appearance}
+            onChange={v => update({ appearance: v })}
+            options={[
+              { value: 'system', label: <><MonitorIcon size={16}/> System</> },
+              { value: 'light', label: <><SunIcon size={16}/> Light</> },
+              { value: 'dark', label: <><MoonIcon size={16}/> Dark</> },
+            ]}
+          />
+        </Section>
 
-      <div className="bg-white border border-gray-200 rounded-2xl p-4">
-        <div className="text-sm font-medium text-gray-600 mb-3">Board Theme</div>
-        <div className="flex gap-2">
-          {(Object.keys(BOARD_THEMES) as BoardTheme[]).map(t => (
-            <button key={t} onClick={() => update({ boardTheme: t })}
-              className={`flex-1 py-2 rounded-xl border text-sm font-medium capitalize transition-colors ${settings.boardTheme === t ? 'border-gray-800 bg-gray-800 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-              {t}
-            </button>
-          ))}
-        </div>
-        <div className="mt-3 flex gap-2">
-          {(Object.keys(BOARD_THEMES) as BoardTheme[]).map(t => (
-            <div key={t} className="flex-1 flex rounded-lg overflow-hidden h-8 border border-gray-100">
-              <div className="flex-1" style={{ background: BOARD_THEMES[t].light }}/>
-              <div className="flex-1" style={{ background: BOARD_THEMES[t].dark }}/>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-white border border-gray-200 rounded-2xl p-4">
-        <div className="text-sm font-medium text-gray-600 mb-3">Puzzle Difficulty</div>
-        <div className="flex items-center gap-3 mb-2">
-          <span className="text-xs text-gray-500 w-20">Min Rating</span>
-          <input type="range" min={400} max={2400} step={100} value={settings.minRating}
-            onChange={e => { const v = +e.target.value; update({ minRating: v, maxRating: Math.max(v, settings.maxRating) }); }} className="flex-1 accent-gray-800"/>
-          <span className="text-sm font-medium text-gray-700 w-12 text-right">{settings.minRating}</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-500 w-20">Max Rating</span>
-          <input type="range" min={800} max={2800} step={100} value={settings.maxRating}
-            onChange={e => { const v = +e.target.value; update({ maxRating: v, minRating: Math.min(v, settings.minRating) }); }} className="flex-1 accent-gray-800"/>
-          <span className="text-sm font-medium text-gray-700 w-12 text-right">{settings.maxRating}</span>
-        </div>
-      </div>
-
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-        <button onClick={() => setThemesOpen(o => !o)}
-          className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-          <span>Puzzle Types</span>
-          <span className="text-gray-400 text-xs">{themesSummary} {themesOpen ? '▲' : '▼'}</span>
-        </button>
-        {themesOpen && (
-          <div className="border-t border-gray-100 p-3">
-            <div className="flex gap-2 mb-2">
-              <button onClick={selectAll}
-                className="text-xs px-3 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">Select All</button>
-              <button onClick={() => setThemes([])}
-                className="text-xs px-3 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">Deselect All</button>
-            </div>
-            <div className="max-h-64 overflow-y-auto flex flex-col gap-0.5">
-              {ALL_PUZZLE_THEMES.map(t => (
-                <button key={t} onClick={() => toggleTheme(t)}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 text-left transition-colors w-full">
-                  <span className={`w-4 h-4 rounded border flex items-center justify-center text-xs transition-colors ${isChecked(t) ? 'bg-gray-800 border-gray-800 text-white' : 'border-gray-300'}`}>
-                    {isChecked(t) ? '✓' : ''}
-                  </span>
-                  <span className="text-sm text-gray-700">{t}</span>
+        <Section title="Board">
+          <div className="grid grid-cols-3 gap-3">
+            {(Object.keys(BOARD_THEMES) as BoardTheme[]).map(t => {
+              const c = BOARD_THEMES[t];
+              const active = settings.boardTheme === t;
+              return (
+                <button
+                  key={t}
+                  onClick={() => update({ boardTheme: t })}
+                  aria-pressed={active}
+                  className={`rounded-xl p-1.5 border-2 transition-all text-left ${active ? 'border-accent' : 'border-transparent hover:border-line-strong'}`}
+                >
+                  <div className="relative grid grid-cols-4 rounded-lg overflow-hidden aspect-square">
+                    {Array.from({ length: 16 }).map((_, i) => (
+                      <div key={i} style={{ background: (Math.floor(i / 4) + i) % 2 === 0 ? c.light : c.dark }}/>
+                    ))}
+                    <div className="absolute inset-0 flex items-center justify-center gap-0 pointer-events-none">
+                      <ChessPiece color="w" type="n" size={40}/>
+                      <ChessPiece color="b" type="q" size={40}/>
+                    </div>
+                    {active && (
+                      <span className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-accent text-accent-fg flex items-center justify-center"><CheckIcon size={13}/></span>
+                    )}
+                  </div>
+                  <div className={`text-sm font-semibold mt-2 px-1 ${active ? 'text-fg' : 'text-muted'}`}>{c.label}</div>
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
-        )}
+        </Section>
+
+        <Section title="Puzzle difficulty" description={`Puzzles rated ${settings.minRating}–${settings.maxRating}.`}>
+          <div className="flex flex-wrap gap-2 mb-5">
+            {DIFFICULTY_PRESETS.map(p => (
+              <button
+                key={p.label}
+                onClick={() => update({ minRating: p.min, maxRating: p.max })}
+                className={`chip py-1.5 px-3 text-sm font-semibold transition-colors ${preset === p ? 'bg-accent text-accent-fg' : 'hover:text-fg'}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-col gap-3">
+            <label className="flex items-center gap-3">
+              <span className="text-sm text-muted w-24">Minimum</span>
+              <input type="range" min={400} max={2400} step={100} value={settings.minRating}
+                onChange={e => { const v = +e.target.value; update({ minRating: v, maxRating: Math.max(v, settings.maxRating) }); }}
+                className="range flex-1"/>
+              <span className="text-sm font-semibold text-fg w-12 text-right tabular-nums">{settings.minRating}</span>
+            </label>
+            <label className="flex items-center gap-3">
+              <span className="text-sm text-muted w-24">Maximum</span>
+              <input type="range" min={800} max={2800} step={100} value={settings.maxRating}
+                onChange={e => { const v = +e.target.value; update({ maxRating: v, minRating: Math.min(v, settings.minRating) }); }}
+                className="range flex-1"/>
+              <span className="text-sm font-semibold text-fg w-12 text-right tabular-nums">{settings.maxRating}</span>
+            </label>
+          </div>
+        </Section>
+
+        <section className="card overflow-hidden">
+          <button onClick={() => setThemesOpen(o => !o)} className="w-full flex items-center justify-between gap-4 p-5 text-left hover:bg-surface-2/50 transition-colors" aria-expanded={themesOpen}>
+            <div>
+              <h2 className="font-bold text-fg">Puzzle types</h2>
+              <p className="text-sm text-muted mt-0.5">{themesSummary}</p>
+            </div>
+            <span className={`text-subtle transition-transform ${themesOpen ? 'rotate-90' : ''}`}><ChevronRightIcon/></span>
+          </button>
+          {themesOpen && (
+            <div className="px-5 pb-5">
+              <div className="flex gap-2 mb-3">
+                <button onClick={selectAll} className="btn btn-secondary h-8 min-h-0 text-xs">Select all</button>
+                <button onClick={() => setThemes([])} className="btn btn-ghost h-8 min-h-0 text-xs">Clear</button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {ALL_PUZZLE_THEMES.map(t => {
+                  const on = isChecked(t);
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => toggleTheme(t)}
+                      aria-pressed={on}
+                      className={`chip py-1.5 px-3 text-[13px] border transition-colors ${on ? 'bg-accent-soft text-accent-soft-fg border-transparent font-semibold' : 'bg-surface border-line hover:border-line-strong'}`}
+                    >
+                      {on && <CheckIcon size={13}/>}{themeLabel(t)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </section>
+
+        <Section title="Computer opponent" description="Default strength for new games. You can also change it mid-game.">
+          <div className="flex items-center gap-3">
+            <input type="range" min={0} max={20} value={settings.engineSkill}
+              onChange={e => update({ engineSkill: +e.target.value })} className="range flex-1" aria-label="Engine skill level"/>
+            <span className="text-sm font-semibold text-fg w-32 text-right">{skillLabel(settings.engineSkill)} · {settings.engineSkill}</span>
+          </div>
+        </Section>
       </div>
     </div>
   );

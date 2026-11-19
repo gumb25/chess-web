@@ -1,59 +1,110 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Chess, Square } from 'chess.js';
 import ChessBoard from './ChessBoard';
 import { AppSettings } from '@/lib/types';
 import { useEngineAnalysis, evalBar } from '@/hooks/useEngineAnalysis';
+import { BoardLayout, Panel, EvalBar, MoveList, useArrowKeys } from './ui';
+import {
+  BulbIcon, FlipIcon, PlayIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon,
+  ResetIcon, ClipboardIcon,
+} from './Icons';
 
 interface Props {
   settings: AppSettings;
+  active?: boolean;
   initialFen?: string;
-  initialMoves?: string[];
+  initialMoves?: string[]; // UCI
   initialPlayerColor?: 'w' | 'b';
   onPlayFromHere?: (fen: string, color: 'w' | 'b') => void;
 }
 
 type LastMove = { from: Square; to: Square } | null;
+type Move = { san: string; from: Square; to: Square; promotion?: string };
 
-// Replay a puzzle line into one snapshot per ply, starting from the position
-// after the opponent's first (setup) move.
-function buildLine(initialFen?: string, initialMoves?: string[]): { fen: string; lastMove: LastMove }[] {
-  if (!initialFen || !initialMoves?.length) return [];
-  const line: { fen: string; lastMove: LastMove }[] = [];
-  const c = new Chess(initialFen);
-  for (const uci of initialMoves) {
+const START_FEN = new Chess().fen();
+
+// Turn a UCI line (from a puzzle or a finished game) into SAN moves.
+function buildMoves(fen: string, uciMoves?: string[]): Move[] {
+  if (!uciMoves?.length) return [];
+  const c = new Chess(fen);
+  const out: Move[] = [];
+  for (const uci of uciMoves) {
     const from = uci.slice(0, 2) as Square;
     const to = uci.slice(2, 4) as Square;
-    try { c.move({ from, to, promotion: uci[4] }); } catch { break; }
-    line.push({ fen: c.fen(), lastMove: { from, to } });
+    const promotion = uci[4];
+    try {
+      const r = c.move({ from, to, promotion });
+      out.push({ san: r.san, from, to, promotion });
+    } catch { break; }
   }
-  return line;
+  return out;
 }
 
 function gameOverMessage(c: Chess): string | null {
-  if (c.isCheckmate()) return c.turn() === 'w' ? 'Black wins by checkmate!' : 'White wins by checkmate!';
-  if (c.isStalemate()) return 'Stalemate — draw.';
-  if (c.isDraw()) return 'Draw.';
+  if (c.isCheckmate()) return c.turn() === 'w' ? 'Black wins by checkmate' : 'White wins by checkmate';
+  if (c.isStalemate()) return 'Stalemate';
+  if (c.isDraw()) return 'Draw';
   return null;
 }
 
-export default function AnalyzeMode({ settings, initialFen, initialMoves, initialPlayerColor, onPlayFromHere }: Props) {
-  const [line] = useState(() => buildLine(initialFen, initialMoves));
-  const [lineIdx, setLineIdx] = useState(line.length - 1);
-  const [chess, setChess] = useState<Chess>(() =>
-    line.length ? new Chess(line[line.length - 1].fen) : new Chess(initialFen ?? undefined)
-  );
-  const [history, setHistory] = useState<{ chess: Chess; lastMove: LastMove }[]>([]);
+// Plain-language summary of a White-relative score ("45", "-M3"…).
+function describeEval(score: string): string {
+  if (score.includes('M')) {
+    const n = Math.abs(parseInt(score.replace('M', ''), 10)) || 0;
+    const side = score.startsWith('-') ? 'Black' : 'White';
+    return n === 0 ? 'Checkmate' : `${side} mates in ${n}`;
+  }
+  const cp = parseFloat(score) || 0;
+  const side = cp > 0 ? 'White' : 'Black';
+  const a = Math.abs(cp);
+  if (a < 50) return 'About equal';
+  if (a < 150) return `${side} is slightly better`;
+  if (a < 400) return `${side} is better`;
+  return `${side} is winning`;
+}
+
+function pvToSan(fen: string, pv: string[], max = 8): string[] {
+  const c = new Chess(fen);
+  const out: string[] = [];
+  for (const uci of pv.slice(0, max)) {
+    try {
+      out.push(c.move({ from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: uci[4] }).san);
+    } catch { break; }
+  }
+  return out;
+}
+
+export default function AnalyzeMode({ settings, active = true, initialFen, initialMoves, initialPlayerColor, onPlayFromHere }: Props) {
+  const [startFen, setStartFen] = useState(() => {
+    try { return new Chess(initialFen).fen(); } catch { return START_FEN; }
+  });
+  const [moves, setMoves] = useState<Move[]>(() => buildMoves(initialFen ?? START_FEN, initialMoves));
+  const [ply, setPly] = useState(() => moves.length);
   const [flipped, setFlipped] = useState(() => initialPlayerColor === 'b');
-  const [lastMove, setLastMove] = useState<LastMove>(() => line.length ? line[line.length - 1].lastMove : null);
   const [hintLevel, setHintLevel] = useState(0);
   const [hintSquare, setHintSquare] = useState<Square | null>(null);
   const [hintDestSquare, setHintDestSquare] = useState<Square | null>(null);
+  const [fenInput, setFenInput] = useState('');
+  const [fenError, setFenError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const { chess, lastMove } = useMemo(() => {
+    const c = new Chess(startFen);
+    let lm: LastMove = null;
+    for (const m of moves.slice(0, ply)) {
+      c.move({ from: m.from, to: m.to, promotion: m.promotion });
+      lm = { from: m.from, to: m.to };
+    }
+    return { chess: c, lastMove: lm };
+  }, [startFen, moves, ply]);
 
   const fen = chess.fen();
-  const { isAnalyzing, evalScore, arrows, bestMove } = useEngineAnalysis(fen);
+  const { isReady, isAnalyzing, evalScore, arrows, bestMove, pv } = useEngineAnalysis(fen);
   const gameOverMsg = gameOverMessage(chess);
+  const startChess = useMemo(() => new Chess(startFen), [startFen]);
+  const bestLine = useMemo(() => pvToSan(fen, pv), [fen, pv]);
 
   const clearHint = () => {
     setHintSquare(null);
@@ -61,117 +112,188 @@ export default function AnalyzeMode({ settings, initialFen, initialMoves, initia
     setHintLevel(0);
   };
 
+  const goToPly = useCallback((p: number) => {
+    setPly(Math.max(0, Math.min(moves.length, p)));
+    clearHint();
+  }, [moves.length]);
+
+  // Playing a move from an earlier position starts a new branch.
   const handleMove = useCallback((from: Square, to: Square, promotion?: string): boolean => {
-    const c = new Chess(chess.fen());
+    const c = new Chess(fen);
     let result;
     try { result = c.move({ from, to, promotion }); } catch { return false; }
     if (!result) return false;
-
-    setHistory(h => [...h, { chess, lastMove }]);
-    setChess(c);
-    setLastMove({ from, to });
+    const next = moves[ply];
+    if (next && next.from === from && next.to === to && next.promotion === promotion) {
+      setPly(ply + 1); // same as the existing continuation: just step forward
+    } else {
+      setMoves([...moves.slice(0, ply), { san: result.san, from, to, promotion }]);
+      setPly(ply + 1);
+    }
     clearHint();
     return true;
-  }, [chess, lastMove]);
-
-  const handleUndo = () => {
-    if (history.length === 0) return;
-    const prev = history[history.length - 1];
-    setHistory(h => h.slice(0, -1));
-    setChess(prev.chess);
-    setLastMove(prev.lastMove);
-    clearHint();
-  };
+  }, [fen, moves, ply]);
 
   const handleHint = async () => {
     const move = await bestMove();
     if (!move) return;
-    const from = move.slice(0, 2) as Square;
-    const to = move.slice(2, 4) as Square;
-    setHintSquare(from);
+    setHintSquare(move.slice(0, 2) as Square);
     if (hintLevel === 0) {
       setHintDestSquare(null);
       setHintLevel(1);
     } else {
-      setHintDestSquare(to);
+      setHintDestSquare(move.slice(2, 4) as Square);
       setHintLevel(2);
     }
   };
 
-  const navigateLine = (idx: number) => {
-    if (idx < 0 || idx >= line.length) return;
-    setLineIdx(idx);
-    setHistory([]);
-    setChess(new Chess(line[idx].fen));
-    setLastMove(line[idx].lastMove);
+  const loadFen = (value: string) => {
+    const v = value.trim();
+    if (!v) return;
+    try {
+      const c = new Chess(v);
+      setStartFen(c.fen());
+      setMoves([]);
+      setPly(0);
+      setFenError(null);
+      setFenInput('');
+      setFlipped(c.turn() === 'b');
+      clearHint();
+    } catch {
+      setFenError('That doesn’t look like a valid FEN.');
+    }
+  };
+
+  const reset = () => {
+    setStartFen(START_FEN);
+    setMoves([]);
+    setPly(0);
+    setFenError(null);
     clearHint();
   };
 
-  const { whiteAdvantage, label: evalLabel } = evalBar(evalScore);
+  const copyFen = async () => {
+    try {
+      await navigator.clipboard.writeText(fen);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard unavailable */ }
+  };
 
-  return (
-    <div className="flex flex-col items-center gap-2 py-2 px-3">
-      <div className="flex items-center justify-between w-full max-w-[480px] px-1">
-        <div className="text-sm font-semibold text-gray-700">
-          Analysis {isAnalyzing && <span className="text-gray-400 font-normal">(thinking…)</span>}
-        </div>
-        <div className="flex gap-2">
-          <button onClick={handleUndo} disabled={history.length === 0} className="text-sm px-3 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-30 transition-colors">
-            Undo
-          </button>
-          <button onClick={() => setFlipped(f => !f)} className="text-sm px-3 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
-            Flip
-          </button>
-        </div>
-      </div>
+  useArrowKeys(active, {
+    left: () => goToPly(ply - 1),
+    right: () => goToPly(ply + 1),
+    up: () => goToPly(0),
+    down: () => goToPly(moves.length),
+  });
 
-      <div className="w-full max-w-[480px] flex items-center gap-2">
-        <span className="text-xs text-gray-500 w-10 text-right">{evalLabel}</span>
-        <div className="flex-1 h-4 rounded-full overflow-hidden flex border border-gray-200">
-          <div style={{ width: `${whiteAdvantage}%`, background: '#ffffff', flexShrink: 0, transition: 'width 300ms' }}/>
-          <div style={{ flex: 1, background: '#000000' }}/>
-        </div>
-      </div>
+  const { label: evalLabel, whiteAdvantage } = evalBar(evalScore);
+  const evalText = gameOverMsg ? (chess.isCheckmate() ? '#' : '½–½') : evalLabel;
+  const evalSub = gameOverMsg ?? (!isReady ? 'Starting engine…' : describeEval(evalScore));
 
-      <ChessBoard
-        chess={chess}
-        flipped={flipped}
-        theme={settings.boardTheme}
-        onMove={handleMove}
-        arrows={arrows}
-        hintSquare={hintSquare}
-        hintDestSquare={hintDestSquare}
-        lastMove={lastMove}
-      />
-
-      {gameOverMsg && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2 text-blue-700 text-sm font-medium max-w-[480px] w-full text-center">
-          {gameOverMsg}
-        </div>
-      )}
-
-      {line.length > 0 && (
-        <div className="flex items-center gap-2 max-w-[480px] w-full justify-center">
-          <button onClick={() => navigateLine(0)} disabled={lineIdx <= 0} aria-label="First move" className="text-gray-500 hover:text-gray-800 disabled:opacity-30 text-lg px-1">⏮</button>
-          <button onClick={() => navigateLine(lineIdx - 1)} disabled={lineIdx <= 0} aria-label="Previous move" className="text-gray-500 hover:text-gray-800 disabled:opacity-30 text-lg px-1">◀</button>
-          <span className="text-sm text-gray-500 min-w-[80px] text-center">
-            {lineIdx === 0 ? 'Start' : lineIdx === line.length - 1 ? 'End' : `Move ${lineIdx}/${line.length - 1}`}
-          </span>
-          <button onClick={() => navigateLine(lineIdx + 1)} disabled={lineIdx >= line.length - 1} aria-label="Next move" className="text-gray-500 hover:text-gray-800 disabled:opacity-30 text-lg px-1">▶</button>
-          <button onClick={() => navigateLine(line.length - 1)} disabled={lineIdx >= line.length - 1} aria-label="Last move" className="text-gray-500 hover:text-gray-800 disabled:opacity-30 text-lg px-1">⏭</button>
-        </div>
-      )}
-
-      <div className="flex gap-2 max-w-[480px] w-full">
-        <button onClick={handleHint} disabled={!!gameOverMsg} className="flex-1 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 rounded-xl py-2 text-sm font-medium transition-colors disabled:opacity-40">
-          Hint {hintLevel > 0 ? `(${hintLevel}/2)` : ''}
-        </button>
-        {onPlayFromHere && (
-          <button onClick={() => onPlayFromHere(chess.fen(), chess.turn())} disabled={!!gameOverMsg} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-2 text-sm font-medium transition-colors disabled:opacity-40">
-            Play from here
-          </button>
-        )}
+  const boardCol = (
+    <div className="flex gap-2 sm:gap-3 items-stretch">
+      <EvalBar evalScore={evalScore} flipped={flipped} ready={isReady}/>
+      <div className="flex-1 min-w-0">
+        <ChessBoard
+          chess={chess}
+          flipped={flipped}
+          theme={settings.boardTheme}
+          onMove={handleMove}
+          arrows={arrows}
+          hintSquare={hintSquare}
+          hintDestSquare={hintDestSquare}
+          lastMove={lastMove}
+        />
       </div>
     </div>
   );
+
+  const navBtn = (onClick: () => void, disabled: boolean, label: string, icon: React.ReactNode) => (
+    <button onClick={onClick} disabled={disabled} aria-label={label} title={label} className="btn btn-secondary flex-1 px-0">
+      {icon}
+    </button>
+  );
+
+  const panel = (
+    <>
+      <section className="card p-4 flex items-center gap-4">
+        <div className={`min-w-[5.5rem] h-14 px-3 rounded-xl flex items-center justify-center text-2xl font-bold tabular-nums ${
+          whiteAdvantage >= 50 ? 'bg-[var(--eval-white)] text-[#1d1b18] border border-line' : 'bg-[var(--eval-black)] text-[#eee]'
+        }`}>
+          {evalText}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-fg flex items-center gap-2">
+            {evalSub}
+            {isAnalyzing && <span className="w-3.5 h-3.5 rounded-full border-2 border-line-strong border-t-accent animate-spin" aria-label="Analyzing"/>}
+          </div>
+          <div className="text-sm text-muted truncate mt-0.5" title={bestLine.join(' ')}>
+            {bestLine.length > 0 ? <>Best: <span className="font-medium text-fg">{bestLine.join(' ')}</span></> : `${chess.turn() === 'w' ? 'White' : 'Black'} to move`}
+          </div>
+        </div>
+      </section>
+
+      <div className="flex gap-2">
+        {navBtn(() => goToPly(0), ply === 0, 'First move', <ChevronsLeftIcon size={18}/>)}
+        {navBtn(() => goToPly(ply - 1), ply === 0, 'Previous move', <ChevronLeftIcon size={18}/>)}
+        {navBtn(() => goToPly(ply + 1), ply >= moves.length, 'Next move', <ChevronRightIcon size={18}/>)}
+        {navBtn(() => goToPly(moves.length), ply >= moves.length, 'Last move', <ChevronsRightIcon size={18}/>)}
+        <button onClick={() => setFlipped(f => !f)} aria-label="Flip board" title="Flip board" className="btn btn-ghost btn-icon h-11 w-11">
+          <FlipIcon size={18}/>
+        </button>
+      </div>
+
+      <Panel title="Moves" action={<span className="hidden lg:inline text-xs text-subtle"><span className="kbd">←</span> <span className="kbd">→</span> to step</span>}>
+        <MoveList
+          sans={moves.map(m => m.san)}
+          ply={ply}
+          onSelect={goToPly}
+          startMoveNumber={startChess.moveNumber()}
+          blackFirst={startChess.turn() === 'b'}
+          empty="Move pieces on the board to explore."
+        />
+      </Panel>
+
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={handleHint} disabled={!!gameOverMsg || hintLevel >= 2} className="btn btn-soft h-12">
+          <BulbIcon size={18}/> {hintLevel === 0 ? 'Best move' : hintLevel === 1 ? 'Show target' : 'Shown'}
+        </button>
+        {onPlayFromHere && (
+          <button onClick={() => onPlayFromHere(fen, chess.turn())} disabled={!!gameOverMsg} className="btn btn-primary h-12">
+            <PlayIcon size={18}/> Play from here
+          </button>
+        )}
+      </div>
+
+      <Panel title="Position">
+        <div className="px-4 pb-4 flex flex-col gap-2">
+          <form
+            className="flex gap-2"
+            onSubmit={e => { e.preventDefault(); loadFen(fenInput); }}
+          >
+            <input
+              value={fenInput}
+              onChange={e => { setFenInput(e.target.value); setFenError(null); }}
+              placeholder="Paste a FEN to load a position"
+              className="flex-1 min-w-0 h-10 px-3 rounded-lg bg-surface-2 border border-line text-sm text-fg placeholder:text-subtle focus:outline-none focus:border-accent"
+              aria-label="FEN"
+            />
+            <button type="submit" disabled={!fenInput.trim()} className="btn btn-secondary h-10 min-h-0">Load</button>
+          </form>
+          {fenError && <div className="text-xs text-danger">{fenError}</div>}
+          <div className="flex gap-2">
+            <button onClick={copyFen} className="btn btn-ghost h-9 min-h-0 px-2 text-xs">
+              <ClipboardIcon size={16}/> {copied ? 'Copied!' : 'Copy FEN'}
+            </button>
+            <button onClick={reset} className="btn btn-ghost h-9 min-h-0 px-2 text-xs">
+              <ResetIcon size={16}/> Starting position
+            </button>
+          </div>
+        </div>
+      </Panel>
+    </>
+  );
+
+  return <BoardLayout board={boardCol} panel={panel}/>;
 }

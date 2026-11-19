@@ -15,6 +15,7 @@ interface Analysis {
   fen: string;
   score: string;
   arrows: Arrow[];
+  pv: string[];
 }
 
 // Continuously evaluates `fen` with a dedicated Stockfish worker. Results are
@@ -50,10 +51,10 @@ export function useEngineAnalysis(fen: string, movetime = 800) {
       const arrows: Arrow[] = result.pv.slice(0, 5).map((uci, i) => ({
         from: uci.slice(0, 2) as Square,
         to: uci.slice(2, 4) as Square,
-        color: '#3b82f6',
+        color: '#4f8fe8',
         opacity: Math.max(0.25, 0.82 - i * 0.14),
       }));
-      setAnalysis({ fen, score, arrows });
+      setAnalysis({ fen, score, arrows, pv: result.pv });
     });
     return () => { cancelled = true; };
   }, [fen, isReady, isOver, sideToMove, search]);
@@ -75,6 +76,7 @@ export function useEngineAnalysis(fen: string, movetime = 800) {
     isAnalyzing: isReady && !isOver && !isCurrent,
     evalScore,
     arrows: !isOver && isCurrent ? analysis.arrows : [],
+    pv: !isOver && isCurrent ? analysis.pv : [],
     bestMove,
   };
 }

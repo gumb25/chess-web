@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -14,8 +14,19 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Chess",
-  description: "Chess puzzles, play vs Stockfish, and analysis",
+  description: "Chess puzzles, play vs Stockfish, opening explorer and analysis",
 };
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f3ee" },
+    { media: "(prefers-color-scheme: dark)", color: "#121315" },
+  ],
+};
+
+// Applies the saved Light/Dark choice before first paint so the page never
+// flashes the wrong theme.
+const themeScript = `try{var s=JSON.parse(localStorage.getItem('chess_settings')||'{}');if(s.appearance==='light'||s.appearance==='dark')document.documentElement.dataset.theme=s.appearance}catch(e){}`;
 
 export default function RootLayout({
   children,
@@ -25,9 +36,13 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
+      <body className="min-h-full">{children}</body>
     </html>
   );
 }
